@@ -2,7 +2,7 @@ models/
 calibration/*.dat
 calibration/*.txt
 calibration/*.parquet
-results/*
+results/*.log
 !results/.gitkeep
 .venv/
 __pycache__/
