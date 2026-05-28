@@ -1,0 +1,20 @@
+[project]
+name = "super-quant"
+version = "0.1.0"
+description = "Advanced GGUF quantization pipeline for Qwen3.6-27B with Unsloth Dynamic-style per-tensor overrides and multi-domain calibration"
+requires-python = ">=3.12"
+dependencies = [
+    "huggingface-hub>=0.25.0",
+    "datasets>=3.0.0",
+    "numpy>=1.26.0",
+    "sentencepiece>=0.2.0",
+    "tiktoken>=0.7.0",
+    "transformers>=4.45.0",
+    "torch>=2.4.0",
+    "tqdm>=4.66.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.6.0",
+]

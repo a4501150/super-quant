@@ -1,0 +1,11 @@
+models/
+calibration/*.dat
+calibration/*.txt
+calibration/*.parquet
+results/*
+!results/.gitkeep
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+*.bak
