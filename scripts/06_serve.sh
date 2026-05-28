@@ -5,9 +5,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/../configs/model.env"
 
 # Parse arguments
-QUANT="${1:-Q5_K_M}"
-CTX="${2:-32768}"
+QUANT="${1:-UD-Q6_K}"
+CTX="${2:-524288}"
 PORT="${3:-8080}"
+PARALLEL="${4:-5}"
+KV_TYPE="${5:-q8_0}"
+
+NATIVE_CTX=262144
 
 # Find the GGUF file
 GGUF="${MODELS_DIR}/${MODEL_NAME}-${QUANT}.gguf"
@@ -19,62 +23,80 @@ if [[ ! -f "${GGUF}" ]]; then
         [[ -f "$f" ]] && echo "  $(basename "$f" .gguf | sed "s/${MODEL_NAME}-//")"
     done
     echo ""
-    echo "Usage: $0 [QUANT_TYPE] [CONTEXT_SIZE] [PORT]"
-    echo "  e.g. $0 Q5_K_M 32768 8080"
+    echo "Usage: $0 [QUANT] [CTX_PER_SLOT] [PORT] [PARALLEL] [KV_TYPE]"
+    echo "  e.g. $0 UD-Q6_K 524288 8080 5 turbo4"
     exit 1
 fi
 
+TOTAL_CTX=$(( CTX * PARALLEL ))
 SIZE=$(du -sh "${GGUF}" | cut -f1)
 echo "=== Launching llama-server ==="
-echo "Model:   ${GGUF} (${SIZE})"
-echo "Context: ${CTX}"
-echo "Port:    ${PORT}"
-echo "GPU:     ${GPU_LAYERS} layers offloaded"
+echo "Model:    ${GGUF} (${SIZE})"
+echo "Context:  ${CTX} per slot × ${PARALLEL} slots = ${TOTAL_CTX} total"
+echo "KV cache: ${KV_TYPE} (unified)"
+echo "Port:     ${PORT}"
+echo "GPU:      ${GPU_LAYERS} layers offloaded"
 
 # Build server args
 ARGS=(
     -m "${GGUF}"
     -ngl "${GPU_LAYERS}"
     --flash-attn
-    -c "${CTX}"
-    --cache-type-k q8_0
-    --cache-type-v q8_0
+    -c "${TOTAL_CTX}"
+    --parallel "${PARALLEL}"
+    --cache-type-k "${KV_TYPE}"
+    --cache-type-v "${KV_TYPE}"
+    -kvu
+    --cache-ram -1
     --host 0.0.0.0
     --port "${PORT}"
     --threads "${THREADS}"
     --metrics
     --jinja
-    --chat-template-kwargs '{"enable_thinking":true}'
+    --chat-template-kwargs '{"enable_thinking":true,"preserve_thinking":true}'
 )
+
+# YaRN context extension beyond native max
+if (( CTX > NATIVE_CTX )); then
+    ROPE_SCALE=$(python3 -c "print(round(${CTX} / ${NATIVE_CTX}, 6))")
+    echo "YaRN:     rope_scale=${ROPE_SCALE} (${NATIVE_CTX} → ${CTX})"
+    ARGS+=(
+        --rope-scaling yarn
+        --rope-scale "${ROPE_SCALE}"
+        --yarn-orig-ctx "${NATIVE_CTX}"
+        --override-kv "qwen35.context_length=int:${CTX}"
+    )
+fi
 
 # Enable MTP speculative decoding if available
 if [[ "${MTP_ENABLED}" = true ]]; then
-    echo "MTP:     enabled (draft-n-max=3)"
+    echo "MTP:      enabled (draft-n-max=3)"
     ARGS+=(
-        --spec-type mtp
+        --spec-type draft-mtp
         --spec-draft-n-max 3
     )
 fi
 
 # Enable vision if mmproj exists
 if [[ -f "${MMPROJ_GGUF}" ]]; then
-    echo "Vision:  ${MMPROJ_GGUF}"
+    echo "Vision:   ${MMPROJ_GGUF}"
     ARGS+=(--mmproj "${MMPROJ_GGUF}")
 fi
 
 echo ""
 echo "Starting server..."
-echo "API:     http://localhost:${PORT}/v1/chat/completions"
-echo "Health:  http://localhost:${PORT}/health"
-echo "Metrics: http://localhost:${PORT}/metrics"
+echo "API:      http://localhost:${PORT}/v1/chat/completions"
+echo "Health:   http://localhost:${PORT}/health"
+echo "Metrics:  http://localhost:${PORT}/metrics"
 echo ""
 
 "${LLAMA_SERVER}" "${ARGS[@]}" &
 SERVER_PID=$!
 
-# Wait for server to be ready
-echo "Waiting for server to start..."
-for i in $(seq 1 30); do
+# Wait for server to be ready (longer timeout for large context allocation)
+TIMEOUT=120
+echo "Waiting for server to start (up to ${TIMEOUT}s)..."
+for i in $(seq 1 "${TIMEOUT}"); do
     if curl -sf "http://localhost:${PORT}/health" >/dev/null 2>&1; then
         echo "Server is ready! (PID: ${SERVER_PID})"
         echo ""
@@ -90,5 +112,5 @@ for i in $(seq 1 30); do
     sleep 1
 done
 
-echo "WARNING: Server did not respond within 30s. Check output above."
+echo "WARNING: Server did not respond within ${TIMEOUT}s. Check output above."
 wait ${SERVER_PID}

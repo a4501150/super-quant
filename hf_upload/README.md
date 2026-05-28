@@ -75,21 +75,30 @@ Calibrated on a balanced mix of general text, code, reasoning, and agentic (tool
 ### llama-server (recommended)
 
 ```bash
-# Q6_K with MTP speculative decoding + vision
+# Q6_K with YaRN 512k context, 5 concurrent slots, MTP + vision
 llama-server \
     -m Qwen3.6-27B-AEON-UD-Q6_K.gguf \
     --mmproj Qwen3.6-27B-AEON-mmproj-F16.gguf \
     -ngl 99 \
     --flash-attn \
-    -c 32768 \
+    -c 2621440 \
+    --parallel 5 \
     --cache-type-k q8_0 \
     --cache-type-v q8_0 \
-    --spec-type mtp \
+    -kvu \
+    --cache-ram -1 \
+    --rope-scaling yarn \
+    --rope-scale 2.0 \
+    --yarn-orig-ctx 262144 \
+    --override-kv "qwen35.context_length=int:524288" \
+    --spec-type draft-mtp \
     --spec-draft-n-max 3 \
     --jinja \
     --chat-template-kwargs '{"enable_thinking":true,"preserve_thinking":true}' \
     --host 0.0.0.0 --port 8080
 ```
+
+> **Note:** `--spec-type draft-mtp` requires llama.cpp b9375+. All flags above work with stock llama.cpp. Our [fork](https://github.com/a4501150/llama.cpp) adds DFlash and TurboQuant KV cache support (`turbo2`/`turbo3`/`turbo4`).
 
 ### llama-cli
 
@@ -98,7 +107,10 @@ llama-cli \
     -m Qwen3.6-27B-AEON-UD-Q6_K.gguf \
     -ngl 99 \
     --flash-attn \
-    -c 32768 \
+    -c 524288 \
+    --rope-scaling yarn \
+    --rope-scale 2.0 \
+    --yarn-orig-ctx 262144 \
     --jinja \
     --chat-template-kwargs '{"enable_thinking":true,"preserve_thinking":true}'
 ```

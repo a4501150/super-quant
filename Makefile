@@ -31,7 +31,9 @@ help:
 	@echo "  make serve        Launch llama-server with MTP"
 	@echo ""
 	@echo "Serving options:"
-	@echo "  make serve QUANT=Q4_K_M CTX=65536 PORT=8080"
+	@echo "  make serve                                          # Q6_K, 512k ctx, 5 slots, turbo4 KV"
+	@echo "  make serve QUANT=UD-Q8_0 CTX=262144 PARALLEL=3     # Q8_0, native ctx, 3 slots"
+	@echo "  make serve KV_TYPE=q8_0                             # Q6_K with q8_0 KV cache"
 	@echo ""
 	@echo "Cleanup:"
 	@echo "  make clean        Remove .venv and build artifacts (keeps models)"
@@ -77,11 +79,13 @@ compare:
 compare-md:
 	@$(UV) python3 $(SRC)/compare_results.py --results-dir $(PROJECT_DIR)/results --model-name $(MODEL_NAME) --markdown
 
-QUANT ?= Q5_K_M
-CTX ?= 32768
-PORT ?= 8080
+QUANT    ?= UD-Q6_K
+CTX      ?= 524288
+PORT     ?= 8080
+PARALLEL ?= 5
+KV_TYPE  ?= q8_0
 serve:
-	@bash $(SCRIPTS)/06_serve.sh $(QUANT) $(CTX) $(PORT)
+	@bash $(SCRIPTS)/06_serve.sh $(QUANT) $(CTX) $(PORT) $(PARALLEL) $(KV_TYPE)
 
 clean:
 	rm -rf $(PROJECT_DIR)/.venv

@@ -6,7 +6,8 @@ GGUF quantization pipeline for Qwen3.6-27B deployed via llama.cpp on RTX PRO 600
 
 - **CUDA 12.8 toolkit is pinned system-wide** — `make setup` auto-installs it to `/usr/local/cuda-12.8` and appends to `~/.bashrc`. The driver (596.36, reports "CUDA 13.2") stays untouched — driver and toolkit are separate things. CUDA 13.x toolkits have multiple bugs on Blackwell: 13.0-13.1 segfault MMQ kernels, 13.2 miscompiles IQ dequant kernels. CUDA 12.8 is NVIDIA's official recommendation for sm_120. See: https://forums.developer.nvidia.com/t/321330
 - **Qwen3.6 chat template is whitespace-sensitive** — `'{"enable_thinking":true}'` works, `'{"enable_thinking": true}'` silently fails (space after colon breaks it).
-- **MTP GGUFs are different from standard GGUFs** — MTP tensors (draft head weights) must be included at convert time. `convert_hf_to_gguf.py` from llama.cpp b9180+ includes them by default. Standard GGUFs without MTP tensors cannot use `--spec-type mtp`.
+- **MTP GGUFs are different from standard GGUFs** — MTP tensors (draft head weights) must be included at convert time. `convert_hf_to_gguf.py` from llama.cpp b9180+ includes them by default. Standard GGUFs without MTP tensors cannot use `--spec-type draft-mtp`.
+- **`--spec-type mtp` was renamed to `--spec-type draft-mtp`** in llama.cpp around May 2026. Build b9375+ uses the new name.
 - **Qwen3.6 hybrid arch**: only 8/32 layers use full attention with KV cache; the other 24 use GatedDeltaNet (SSM, no KV cache). This means KV cache quantization (`--cache-type-k q8_0`) has minimal impact — there's very little KV to compress. TurboQuant similarly has ~1-3% overhead only.
 - **Wikipedia-only calibration data overfits perplexity benchmarks** but produces worse real-world output for instruct models. The pipeline uses multi-domain calibration (chat/code/math/tool-calling/Chinese/long-context) deliberately — don't "simplify" back to wikitext.
 - **Calibration uses token budgets with complete samples** — each domain group has a token target (~750K-1M). Samples are shuffled then collected until the budget is reached. The last sample is always included whole even if it overshoots. Never truncate mid-conversation.
@@ -62,6 +63,15 @@ Q6_K remains the sweet spot — 26.4G with p99.9=0.78, better than baseline Q8_0
 - `ssm_alpha/beta` — Q4_0 probe showed low sensitivity (KL ~0.0014) but removing f32 protection caused Q6_K regression. Kept at f32.
 - FFN middle layers — letting base quant handle these (instead of forcing q8_0) restores size differentiation without meaningful KL impact
 
+## Deployment config
+
+Default: `make serve` → UD-Q6_K, 512k context per slot, 5 parallel slots, q8_0 KV cache, unified KV, YaRN, MTP draft-mtp, vision.
+
+- **YaRN auto-activates** when CTX > 262144 (Qwen3.6 native max). `--override-kv qwen35.context_length=int:CTX` bypasses server-context.cpp cap bug (llama.cpp #22140).
+- **`preserve_thinking:true`** keeps `<think>` blocks in conversation history, preventing amnesia during multi-turn tool-calling loops.
+- **Unified KV** (`-kvu`) — single shared KV buffer across all slots, better memory pooling with lazy allocation.
+- **q8_0 KV cache** — hybrid SSM means only 16/64 layers have KV cache, so q8_0 is cheap enough. No need for turbo quant.
+
 ## Paths
 
 - llama.cpp fork: `/home/jinyang/src/llama.cpp`
@@ -73,6 +83,6 @@ Q6_K remains the sweet spot — 26.4G with p99.9=0.78, better than baseline Q8_0
 ```bash
 make help          # show all targets
 make all           # full pipeline
-make serve         # default Q5_K_M
-make serve QUANT=Q4_K_M CTX=65536   # custom quant + context
+make serve         # Q6_K, 512k ctx, 5 slots, turbo4 KV, YaRN+MTP+vision
+make serve QUANT=UD-Q8_0 CTX=262144 PARALLEL=3 KV_TYPE=q8_0
 ```
