@@ -41,7 +41,7 @@ echo "GPU:      ${GPU_LAYERS} layers offloaded"
 ARGS=(
     -m "${GGUF}"
     -ngl "${GPU_LAYERS}"
-    --flash-attn
+    -fa on
     -c "${TOTAL_CTX}"
     --parallel "${PARALLEL}"
     --cache-type-k "${KV_TYPE}"
@@ -53,6 +53,7 @@ ARGS=(
     --threads "${THREADS}"
     --metrics
     --jinja
+    --reasoning on
     --chat-template-kwargs '{"enable_thinking":true,"preserve_thinking":true}'
 )
 
@@ -70,10 +71,10 @@ fi
 
 # Enable MTP speculative decoding if available
 if [[ "${MTP_ENABLED}" = true ]]; then
-    echo "MTP:      enabled (draft-n-max=3)"
+    echo "MTP:      enabled (draft-n-max=${MTP_N_MAX})"
     ARGS+=(
         --spec-type draft-mtp
-        --spec-draft-n-max 3
+        --spec-draft-n-max "${MTP_N_MAX}"
     )
 fi
 

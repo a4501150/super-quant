@@ -8,6 +8,7 @@ GGUF quantization pipeline for Qwen3.6-27B deployed via llama.cpp on RTX PRO 600
 - **Qwen3.6 chat template is whitespace-sensitive** — `'{"enable_thinking":true}'` works, `'{"enable_thinking": true}'` silently fails (space after colon breaks it).
 - **MTP GGUFs are different from standard GGUFs** — MTP tensors (draft head weights) must be included at convert time. `convert_hf_to_gguf.py` from llama.cpp b9180+ includes them by default. Standard GGUFs without MTP tensors cannot use `--spec-type draft-mtp`.
 - **`--spec-type mtp` was renamed to `--spec-type draft-mtp`** in llama.cpp around May 2026. Build b9375+ uses the new name.
+- **MTP output diverges from baseline** — `draft-mtp` on Qwen3.6 produces coherent but different output than non-MTP baseline. Root cause: `need_n_rs_seq()` inflates `n_rs_seq` on the target context, changing the RS buffer layout (`n_rows *= 1 + n_rs_seq`), which changes SSM computation numerics. The divergence is inherent to speculative decoding on hybrid SSM+attention models — batch verification of draft tokens produces different SSM state than sequential processing. Acceptance rate is 60-80%. EOS suppression inside `<think>` blocks is handled automatically by the reasoning budget sampler when `--reasoning on` is active — no per-request `thinking_budget_tokens` needed.
 - **Qwen3.6 hybrid arch**: only 8/32 layers use full attention with KV cache; the other 24 use GatedDeltaNet (SSM, no KV cache). This means KV cache quantization (`--cache-type-k q8_0`) has minimal impact — there's very little KV to compress. TurboQuant similarly has ~1-3% overhead only.
 - **Wikipedia-only calibration data overfits perplexity benchmarks** but produces worse real-world output for instruct models. The pipeline uses multi-domain calibration (chat/code/math/tool-calling/Chinese/long-context) deliberately — don't "simplify" back to wikitext.
 - **Calibration uses token budgets with complete samples** — each domain group has a token target (~750K-1M). Samples are shuffled then collected until the budget is reached. The last sample is always included whole even if it overshoots. Never truncate mid-conversation.
@@ -65,12 +66,13 @@ Q6_K remains the sweet spot — 26.4G with p99.9=0.78, better than baseline Q8_0
 
 ## Deployment config
 
-Default: `make serve` → UD-Q6_K, 512k context per slot, 5 parallel slots, q8_0 KV cache, unified KV, YaRN, MTP draft-mtp, vision.
+Default: `make serve` → UD-Q6_K, 512k context per slot, 5 parallel slots, q8_0 KV cache, unified KV, YaRN, MTP, vision.
 
+- **Thinking mode uses both flags** — `--reasoning on` sets the server-level reasoning format, `--chat-template-kwargs '{"enable_thinking":true,"preserve_thinking":true}'` passes Qwen's recommended template variables explicitly. Both are passed in `06_serve.sh` and `07_bench_spec.sh`.
 - **YaRN auto-activates** when CTX > 262144 (Qwen3.6 native max). `--override-kv qwen35.context_length=int:CTX` bypasses server-context.cpp cap bug (llama.cpp #22140).
-- **`preserve_thinking:true`** keeps `<think>` blocks in conversation history, preventing amnesia during multi-turn tool-calling loops.
 - **Unified KV** (`-kvu`) — single shared KV buffer across all slots, better memory pooling with lazy allocation.
 - **q8_0 KV cache** — hybrid SSM means only 16/64 layers have KV cache, so q8_0 is cheap enough. No need for turbo quant.
+- **DFlash speculative decoding** requires 3 fork fixes: (1) `speculative.cpp` must not auto-enable `draft-simple` when `dflash` is active (causes n_seq mismatch crash); (2) drafter context needs `n_seq_max >= n_parallel` (default is 1, server uses slot IDs as seq_ids); (3) `server-context.cpp` needs defensive `spec_i_batch` clearing. DFlash acceptance rate is near-zero on thinking-mode text — drafter wasn't trained on `<think>` distribution.
 
 ## Paths
 
@@ -83,6 +85,6 @@ Default: `make serve` → UD-Q6_K, 512k context per slot, 5 parallel slots, q8_0
 ```bash
 make help          # show all targets
 make all           # full pipeline
-make serve         # Q6_K, 512k ctx, 5 slots, turbo4 KV, YaRN+MTP+vision
+make serve         # Q6_K, 512k ctx, 5 slots, q8_0 KV, YaRN+MTP+vision
 make serve QUANT=UD-Q8_0 CTX=262144 PARALLEL=3 KV_TYPE=q8_0
 ```
