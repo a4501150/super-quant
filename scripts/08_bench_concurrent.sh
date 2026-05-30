@@ -11,7 +11,7 @@ RESULT_FILE="${RESULTS_DIR}/concurrent_benchmark_$(date +%Y%m%d_%H%M%S).tsv"
 TMPDIR_BENCH=$(mktemp -d)
 
 PORT=8090
-TOTAL_CTX=131072
+TOTAL_CTX=$((NATIVE_CTX / 2))
 PROMPT="Write a detailed Python implementation of a red-black tree with insert, delete, and search operations. Include type hints and docstrings for all methods."
 MAX_TOKENS=1024
 

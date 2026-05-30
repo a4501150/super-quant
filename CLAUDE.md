@@ -1,6 +1,6 @@
 # super-quant
 
-GGUF quantization pipeline for Qwen3.6-27B deployed via llama.cpp on RTX PRO 6000 Blackwell (96GB VRAM).
+Multi-model GGUF quantization pipeline deployed via llama.cpp on RTX PRO 6000 Blackwell (96GB VRAM). Currently targeting Qwen3.6-27B.
 
 ## Gotchas
 
@@ -15,9 +15,11 @@ GGUF quantization pipeline for Qwen3.6-27B deployed via llama.cpp on RTX PRO 600
 - **IQ quants only exist up to ~4.5 bpw** (IQ4_XS, IQ4_NL). There is no IQ5/IQ6/IQ8 — K-quants (Q5_K_M, Q6_K, Q8_0) are the only option at 5+ bits.
 - **imatrix .dat format** is not self-describing — files from different llama.cpp versions may be incompatible. Regenerate imatrix if you update llama.cpp.
 - **Per-tensor overrides use regex matching** — `llama-quantize --tensor-type-file` treats tensor names as regex patterns via `std::regex_search` (substring match). Dots match any character and short names match longer ones (e.g. `output.weight` matches `blk.3.attn_output.weight`). Always use anchored, escaped patterns: `^blk\.3\.attn_output\.weight$=f16`. The sensitivity script generates these automatically.
-- **Per-tensor overrides** (`configs/tensor_overrides.txt`) are model-specific — current file is for Qwen3.6-27B (65 layers, 48 SSM + 17 attn). SSM alpha/beta pinned at F32, ssm_out at Q8_0, MTP layer (blk.64) pinned at F16. When switching models, regenerate via `make sensitivity` or write new overrides.
+- **Per-tensor overrides** (`configs/<model>/tensor_overrides.txt`) are model-specific — current Qwen3.6 file has 65 layers (48 SSM + 17 attn), SSM alpha/beta at F32, MTP layer (blk.64) at F16. Each model gets its own overrides in its config subdir.
 - **Q4_K is an alias for Q4_K_M** which has internal rules promoting certain tensor categories (attn_output → Q5_K, attn_v → Q5_K in early layers, ffn_down → Q6_K in edge layers). The sensitivity script uses Q4_0 (no internal rules) to get uniform probing across all tensor groups.
-- **Switching models**: edit `MODEL_ID` and `MODEL_NAME` in `configs/model.env` only — all scripts read from there. `tensor_overrides.txt` must be rewritten for the new architecture.
+- **Switching models**: change `MODEL_DIR` in `configs/model.env`, create `configs/<model>/model.env` with model-specific settings (MODEL_ID, NATIVE_CTX, GGUF_ARCH_KEY, quant types, MTP config), then run `make sensitivity` to generate tensor overrides.
+- **Downloaded models use HF cache** — `01_download_model.sh` stores weights in `~/.cache/huggingface/hub/`, not in the project. Other tools can reuse them.
+- **Generated GGUFs live in `~/models/gguf/`** (override with `SUPER_QUANT_MODELS` env var). Shared across projects, not in the repo.
 
 ## Architecture decisions
 
@@ -66,25 +68,31 @@ Q6_K remains the sweet spot — 26.4G with p99.9=0.78, better than baseline Q8_0
 
 ## Deployment config
 
-Default: `make serve` → UD-Q6_K, 512k context per slot, 5 parallel slots, q8_0 KV cache, unified KV, YaRN, MTP, vision.
+Default: `make serve` → UD-Q6_K, 512k context per slot, 5 parallel slots, q8_0 KV cache, unified KV, YaRN, DFlash (or MTP fallback), vision.
 
 - **Thinking mode uses both flags** — `--reasoning on` sets the server-level reasoning format, `--chat-template-kwargs '{"enable_thinking":true,"preserve_thinking":true}'` passes Qwen's recommended template variables explicitly. Both are passed in `06_serve.sh` and `07_bench_spec.sh`.
-- **YaRN auto-activates** when CTX > 262144 (Qwen3.6 native max). `--override-kv qwen35.context_length=int:CTX` bypasses server-context.cpp cap bug (llama.cpp #22140).
+- **YaRN auto-activates** when CTX > NATIVE_CTX (set per model in `configs/<model>/model.env`). `--override-kv ${GGUF_ARCH_KEY}.context_length=int:CTX` bypasses server-context.cpp cap bug (llama.cpp #22140).
 - **Unified KV** (`-kvu`) — single shared KV buffer across all slots, better memory pooling with lazy allocation.
 - **q8_0 KV cache** — hybrid SSM means only 16/64 layers have KV cache, so q8_0 is cheap enough. No need for turbo quant.
-- **DFlash speculative decoding** requires 3 fork fixes: (1) `speculative.cpp` must not auto-enable `draft-simple` when `dflash` is active (causes n_seq mismatch crash); (2) drafter context needs `n_seq_max >= n_parallel` (default is 1, server uses slot IDs as seq_ids); (3) `server-context.cpp` needs defensive `spec_i_batch` clearing. DFlash acceptance rate is near-zero on thinking-mode text — drafter wasn't trained on `<think>` distribution.
+- **DFlash speculative decoding** uses a separate 5-layer diffusion drafter (`z-lab/Qwen3.6-27B-DFlash`, 3.2GB). Unlike MTP, DFlash doesn't add compute to the target model's forward pass — it cross-attends to hidden states captured passively into a ring buffer. This means DFlash should NOT hurt concurrent throughput. The drafter proposes up to 16 tokens per round. Upstream benchmarks show 7+ avg accepted tokens on math/code/tool-calling content. Our fork has 3 fixes: (1) `speculative.cpp` guards against auto-enabling `draft-simple` when `dflash` is active; (2) drafter context gets `n_seq_max >= n_parallel`; (3) `server-context.cpp` defensively clears `spec_i_batch`.
+- **DFlash vs MTP for serving**: DFlash is preferred for concurrent workloads (doesn't saturate GPU at 1 slot like MTP does). `make serve` auto-selects DFlash if the draft model is present, falling back to MTP. Override with `SPEC_TYPE=mtp` or `SPEC_TYPE=none`. Use `make bench-dflash` to compare baseline/MTP/DFlash across thinking and non-thinking workloads.
 
 ## Paths
 
 - llama.cpp fork: `/home/jinyang/src/llama.cpp`
-- Target model: `AEON-7/Qwen3.6-27B-AEON-Ultimate-Uncensored-BF16`
+- Generated GGUFs: `~/models/gguf/` (override: `SUPER_QUANT_MODELS` env var)
+- Downloaded models: `~/.cache/huggingface/hub/` (standard HF cache)
+- Per-model configs: `configs/<MODEL_DIR>/` (tensor overrides, model.env)
 - GPU: NVIDIA RTX PRO 6000 Blackwell, 96GB VRAM, sm_120
 
 ## Commands
 
 ```bash
-make help          # show all targets
-make all           # full pipeline
-make serve         # Q6_K, 512k ctx, 5 slots, q8_0 KV, YaRN+MTP+vision
-make serve QUANT=UD-Q8_0 CTX=262144 PARALLEL=3 KV_TYPE=q8_0
+make help                                   # show all targets
+make all                                    # full pipeline
+make serve                                  # Q6_K, DFlash (auto), 5 slots
+make serve SPEC_TYPE=mtp                    # force MTP instead of DFlash
+make serve SPEC_TYPE=none                   # no speculative decoding
+make bench-dflash                           # baseline vs MTP vs DFlash comparison
+make download-dflash                        # download + convert DFlash draft model
 ```

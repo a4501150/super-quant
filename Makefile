@@ -1,4 +1,4 @@
-.PHONY: all setup download convert calibrate recalibrate imatrix sensitivity quantize benchmark compare serve clean help
+.PHONY: all setup download download-dflash convert calibrate recalibrate imatrix sensitivity quantize benchmark bench-dflash compare serve clean help
 
 SHELL := /bin/bash
 PROJECT_DIR := $(shell pwd)
@@ -9,6 +9,7 @@ UV := uv run --project $(PROJECT_DIR)
 # Load model config from model.env
 MODEL_ID := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$MODEL_ID')
 MODEL_NAME := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$MODEL_NAME')
+MODEL_CONFIG_DIR := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$MODEL_CONFIG_DIR')
 F16_GGUF := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$F16_GGUF')
 LLAMA_PERPLEXITY := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$LLAMA_PERPLEXITY')
 LLAMA_QUANTIZE := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$LLAMA_QUANTIZE')
@@ -28,12 +29,13 @@ help:
 	@echo "  make quantize     Quantize to all target levels"
 	@echo "  make benchmark    Run perplexity + throughput benchmarks"
 	@echo "  make compare      Print comparison table"
-	@echo "  make serve        Launch llama-server with MTP"
+	@echo "  make serve        Launch llama-server (DFlash/MTP/none)"
 	@echo ""
 	@echo "Serving options:"
-	@echo "  make serve                                          # Q6_K, 512k ctx, 5 slots, turbo4 KV"
+	@echo "  make serve                                          # Q6_K, DFlash (auto), 5 slots"
 	@echo "  make serve QUANT=UD-Q8_0 CTX=262144 PARALLEL=3     # Q8_0, native ctx, 3 slots"
-	@echo "  make serve KV_TYPE=q8_0                             # Q6_K with q8_0 KV cache"
+	@echo "  make serve SPEC_TYPE=mtp                            # Force MTP instead of DFlash"
+	@echo "  make serve SPEC_TYPE=none                           # No speculative decoding"
 	@echo ""
 	@echo "Cleanup:"
 	@echo "  make clean        Remove .venv and build artifacts (keeps models)"
@@ -46,6 +48,9 @@ setup:
 download:
 	@$(UV) bash $(SCRIPTS)/01_download_model.sh
 
+download-dflash:
+	@$(UV) bash $(SCRIPTS)/01b_download_dflash.sh
+
 convert:
 	@$(UV) bash $(SCRIPTS)/02_convert_to_gguf.sh
 
@@ -56,7 +61,7 @@ recalibrate:
 	@$(UV) python3 $(SRC)/prepare_calibration.py --output-dir $(PROJECT_DIR)/calibration --model-id $(MODEL_ID) --force
 
 imatrix:
-	@bash $(SCRIPTS)/03_generate_imatrix.sh
+	@$(UV) bash $(SCRIPTS)/03_generate_imatrix.sh
 
 sensitivity:
 	@$(UV) python3 $(SRC)/sensitivity_analysis.py \
@@ -64,14 +69,17 @@ sensitivity:
 		--test-file $(PROJECT_DIR)/calibration/combined.txt \
 		--llama-perplexity $(LLAMA_PERPLEXITY) \
 		--llama-quantize $(LLAMA_QUANTIZE) \
-		--output $(PROJECT_DIR)/configs/tensor_overrides.txt \
+		--output $(MODEL_CONFIG_DIR)/tensor_overrides.txt \
 		--output-json $(PROJECT_DIR)/results/sensitivity.json
 
 quantize:
-	@bash $(SCRIPTS)/04_quantize.sh
+	@$(UV) bash $(SCRIPTS)/04_quantize.sh
 
 benchmark:
-	@bash $(SCRIPTS)/05_benchmark.sh
+	@$(UV) bash $(SCRIPTS)/05_benchmark.sh
+
+bench-dflash:
+	@$(UV) bash $(SCRIPTS)/09_bench_dflash.sh
 
 compare:
 	@$(UV) python3 $(SRC)/compare_results.py --results-dir $(PROJECT_DIR)/results --model-name $(MODEL_NAME)
@@ -79,17 +87,20 @@ compare:
 compare-md:
 	@$(UV) python3 $(SRC)/compare_results.py --results-dir $(PROJECT_DIR)/results --model-name $(MODEL_NAME) --markdown
 
-QUANT    ?= UD-Q6_K
-CTX      ?= 524288
-PORT     ?= 8080
-PARALLEL ?= 5
-KV_TYPE  ?= q8_0
+QUANT     ?= UD-Q6_K
+CTX       ?= 524288
+PORT      ?= 8000
+PARALLEL  ?= 5
+KV_TYPE   ?= q8_0
+SPEC_TYPE ?= none
 serve:
-	@bash $(SCRIPTS)/06_serve.sh $(QUANT) $(CTX) $(PORT) $(PARALLEL) $(KV_TYPE)
+	@SPEC_TYPE=$(SPEC_TYPE) $(UV) bash $(SCRIPTS)/06_serve.sh $(QUANT) $(CTX) $(PORT) $(PARALLEL) $(KV_TYPE)
+
+MODELS_DIR := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$MODELS_DIR')
 
 clean:
 	rm -rf $(PROJECT_DIR)/.venv
 	rm -f $(PROJECT_DIR)/calibration/*.dat
 	rm -f $(PROJECT_DIR)/calibration/*.txt
 	rm -rf $(PROJECT_DIR)/results/*
-	@echo "Cleaned. Models preserved in $(PROJECT_DIR)/models/"
+	@echo "Cleaned. Models preserved in $(MODELS_DIR)"

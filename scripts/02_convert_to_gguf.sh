@@ -4,16 +4,18 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/../configs/model.env"
 
-echo "=== Converting to F16 GGUF ==="
-echo "Source: ${BF16_DIR}"
-echo "Output: ${F16_GGUF}"
+# Resolve HF cache snapshot path (instant if already downloaded)
+BF16_DIR=$(hf download "${MODEL_ID}" 2>/dev/null || true)
 
-if [[ ! -d "${BF16_DIR}" ]] || [[ ! -f "${BF16_DIR}/config.json" ]]; then
-    echo "ERROR: BF16 model not found at ${BF16_DIR}"
+if [[ -z "${BF16_DIR}" ]] || [[ ! -f "${BF16_DIR}/config.json" ]]; then
+    echo "ERROR: Model not found in HF cache: ${MODEL_ID}"
     echo "Run: make download"
     exit 1
 fi
 
+echo "=== Converting to F16 GGUF ==="
+echo "Source: ${BF16_DIR}"
+echo "Output: ${F16_GGUF}"
 
 # Find convert script
 CONVERT="${CONVERT_SCRIPT}"

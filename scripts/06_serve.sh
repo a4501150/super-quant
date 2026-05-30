@@ -11,8 +11,6 @@ PORT="${3:-8080}"
 PARALLEL="${4:-5}"
 KV_TYPE="${5:-q8_0}"
 
-NATIVE_CTX=262144
-
 # Find the GGUF file
 GGUF="${MODELS_DIR}/${MODEL_NAME}-${QUANT}.gguf"
 if [[ ! -f "${GGUF}" ]]; then
@@ -24,15 +22,14 @@ if [[ ! -f "${GGUF}" ]]; then
     done
     echo ""
     echo "Usage: $0 [QUANT] [CTX_PER_SLOT] [PORT] [PARALLEL] [KV_TYPE]"
-    echo "  e.g. $0 UD-Q6_K 524288 8080 5 turbo4"
+    echo "  e.g. $0 UD-Q6_K 524288 8080 5 q8_0"
     exit 1
 fi
 
-TOTAL_CTX=$(( CTX * PARALLEL ))
 SIZE=$(du -sh "${GGUF}" | cut -f1)
 echo "=== Launching llama-server ==="
 echo "Model:    ${GGUF} (${SIZE})"
-echo "Context:  ${CTX} per slot × ${PARALLEL} slots = ${TOTAL_CTX} total"
+echo "Context:  ${CTX} shared pool (unified KV), ${PARALLEL} slots"
 echo "KV cache: ${KV_TYPE} (unified)"
 echo "Port:     ${PORT}"
 echo "GPU:      ${GPU_LAYERS} layers offloaded"
@@ -42,7 +39,7 @@ ARGS=(
     -m "${GGUF}"
     -ngl "${GPU_LAYERS}"
     -fa on
-    -c "${TOTAL_CTX}"
+    -c "${CTX}"
     --parallel "${PARALLEL}"
     --cache-type-k "${KV_TYPE}"
     --cache-type-v "${KV_TYPE}"
@@ -65,12 +62,36 @@ if (( CTX > NATIVE_CTX )); then
         --rope-scaling yarn
         --rope-scale "${ROPE_SCALE}"
         --yarn-orig-ctx "${NATIVE_CTX}"
-        --override-kv "qwen35.context_length=int:${CTX}"
+        --override-kv "${GGUF_ARCH_KEY}.context_length=int:${CTX}"
     )
 fi
 
-# Enable MTP speculative decoding if available
-if [[ "${MTP_ENABLED}" = true ]]; then
+# Speculative decoding: DFlash > MTP (DFlash doesn't hurt concurrent throughput)
+SPEC_TYPE="${SPEC_TYPE:-auto}"
+if [[ "${SPEC_TYPE}" == "auto" ]]; then
+    if [[ -n "${DFLASH_DRAFT_GGUF:-}" ]] && [[ -f "${DFLASH_DRAFT_GGUF}" ]]; then
+        SPEC_TYPE="dflash"
+    elif [[ "${MTP_ENABLED}" = true ]]; then
+        SPEC_TYPE="mtp"
+    else
+        SPEC_TYPE="none"
+    fi
+fi
+
+if [[ "${SPEC_TYPE}" == "dflash" ]]; then
+    if [[ ! -f "${DFLASH_DRAFT_GGUF:-}" ]]; then
+        echo "ERROR: DFlash draft not found: ${DFLASH_DRAFT_GGUF:-<unset>}"
+        echo "Run: make download-dflash"
+        exit 1
+    fi
+    echo "DFlash:   ${DFLASH_DRAFT_GGUF}"
+    ARGS+=(
+        --spec-type dflash
+        -md "${DFLASH_DRAFT_GGUF}"
+        --spec-draft-n-max 8
+        --spec-draft-ngl "${GPU_LAYERS}"
+    )
+elif [[ "${SPEC_TYPE}" == "mtp" ]]; then
     echo "MTP:      enabled (draft-n-max=${MTP_N_MAX})"
     ARGS+=(
         --spec-type draft-mtp

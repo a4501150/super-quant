@@ -3,6 +3,7 @@ calibration/*.dat
 calibration/*.txt
 calibration/*.parquet
 results/*.log
+results/*.tsv
 !results/.gitkeep
 .venv/
 __pycache__/

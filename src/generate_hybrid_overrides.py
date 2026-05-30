@@ -152,7 +152,7 @@ def assign_level(kl_mean, group_name):
 def main():
     parser = argparse.ArgumentParser(description="Generate hybrid tensor overrides")
     parser.add_argument("--sensitivity", default="results/sensitivity.json")
-    parser.add_argument("--model", default="models/Qwen3.6-27B-AEON-F16.gguf")
+    parser.add_argument("--model", required=True)
     parser.add_argument("--output", default="configs/tensor_overrides.txt")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()

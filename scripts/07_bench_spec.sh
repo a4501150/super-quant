@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/../configs/model.env"
 
 GGUF="${MODELS_DIR}/${MODEL_NAME}-UD-Q6_K.gguf"
-DFLASH_DRAFT="${MODELS_DIR}/dflash-draft-3.6-f16.gguf"
+DFLASH_DRAFT="${DFLASH_DRAFT_GGUF:-${MODELS_DIR}/dflash-draft-3.6-f16.gguf}"
 RESULTS_DIR="${PROJECT_DIR}/results"
 RESULT_FILE="${RESULTS_DIR}/spec_benchmark_$(date +%Y%m%d_%H%M%S).log"
 
@@ -161,15 +161,17 @@ if [[ -f "${DFLASH_DRAFT}" ]]; then
         --spec-draft-n-max 16 \
         --spec-draft-ngl "${GPU_LAYERS}"
 
-    run_bench "5. DFlash + YaRN 512k" \
+    YARN_CTX=524288
+    YARN_SCALE=$(python3 -c "print(round(${YARN_CTX} / ${NATIVE_CTX}, 6))")
+    run_bench "5. DFlash + YaRN ${YARN_CTX}" \
         --spec-type dflash \
         -md "${DFLASH_DRAFT}" \
         --spec-draft-n-max 16 \
         --spec-draft-ngl "${GPU_LAYERS}" \
-        -c 524288 \
+        -c "${YARN_CTX}" \
         --rope-scaling yarn \
-        --rope-scale 2.0 \
-        --yarn-orig-ctx 262144
+        --rope-scale "${YARN_SCALE}" \
+        --yarn-orig-ctx "${NATIVE_CTX}"
 else
     log "WARNING: DFlash draft not found: ${DFLASH_DRAFT}"
 fi
