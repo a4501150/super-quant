@@ -34,16 +34,19 @@ Multi-model GGUF quantization pipeline deployed via llama.cpp on RTX PRO 6000 Bl
 
 Results are in `results/`. Key files:
 - `results/benchmark_2026-08-17_001719.json` — Qwen3.8-27B-AEON quant comparison (PPL/KL/throughput)
-- `results/dspark_benchmark_20260817.json` — DSpark vs MTP vs baseline speculative decoding
+- `results/dspark_benchmark_20260817.json` — DSpark vs MTP vs baseline single-user speculative decoding
+- `results/concurrent_benchmark_20260817_025314.tsv` — DSpark vs baseline concurrent throughput (1-5 users)
 - `results/sensitivity.json` — per-tensor group KL divergence from Q4_0 probing
 
-DSpark speculative decoding benchmark (2026-08-17, UD-Q8_0 target, single user, reasoning_effort=medium, temp=0.6/top_k=20/top_p=0.95): DSpark gives 1.9x on code, 3.0x on math, 2.2x on reasoning, 1.2x on creative vs baseline ~44 t/s. MTP is competitive on creative/agentic but kills concurrent throughput.
+Single-user DSpark (UD-Q8_0, reasoning_effort=medium): 1.9x code, 3.0x math, 2.2x reasoning, 1.2x creative vs baseline ~44 t/s.
+
+Concurrent DSpark (UD-Q6_K, 1-5 users): 1.47x per-req at 1 user (72 vs 49 t/s), 1.36x at 5 users (45 vs 33 t/s). Aggregate throughput stays above baseline at every concurrency level (178 vs 156 t/s at 5 users). MTP drops below baseline at 2+ users.
 
 ## Deployment config
 
 Default: `make serve` → UD-Q6_K, DSpark speculative decoding, 512k context, 5 parallel slots, q8_0 KV cache, unified KV, YaRN, vision.
 
-- **DSpark speculative decoding** uses `RadixArk/Qwen3.8-27B-DSpark` (1.36B params, 2.6 GB BF16 GGUF). An extension of DFlash that adds a low-rank Markov head for better draft quality. Cross-attends to target model hidden states at layers 4/16/28/40/52. Block size 7, meaning 7 draft tokens per round. Does not saturate GPU at 1 slot like MTP — scales to concurrent users.
+- **DSpark speculative decoding** uses `RadixArk/Qwen3.8-27B-DSpark` (1.36B params, 2.6 GB BF16 GGUF). An extension of DFlash that adds a low-rank Markov head for better draft quality. Cross-attends to target model hidden states at layers 4/16/28/40/52. Block size 7, meaning 7 draft tokens per round. Scales to concurrent users — aggregate throughput stays above baseline at 1-5 users (unlike MTP which collapses at 2+ users).
 - **DSpark acceptance varies by content type** — math/reasoning: 40-58% acceptance, 3.7-5.1 mean tokens per round. Creative writing: 13% acceptance, 1.9 mean tokens per round. The drafter excels at structured/predictable content.
 - **Reasoning is per-request** — the serve script does not set `--reasoning on` or `--chat-template-kwargs`. The harness controls reasoning via per-request `reasoning_effort` (`xhigh`/`medium`/`low`/`none`). Qwen3.8 recommended sampling: temp=0.6, top_k=20, top_p=0.95.
 - **YaRN auto-activates** when CTX > NATIVE_CTX (set per model in `configs/<model>/model.env`). `--override-kv ${GGUF_ARCH_KEY}.context_length=int:CTX` bypasses server-context.cpp cap bug (llama.cpp #22140).
