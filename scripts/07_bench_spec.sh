@@ -67,20 +67,26 @@ stop_server() {
 
 run_request() {
     local rep="$1"
+
+    if ! kill -0 "${SERVER_PID}" 2>/dev/null; then
+        echo "SERVER CRASHED" >&2
+        return 1
+    fi
+
     local response
-    response=$(curl -sf "http://127.0.0.1:${PORT}/v1/chat/completions" \
+    response=$(curl -sf --max-time 1800 "http://127.0.0.1:${PORT}/v1/chat/completions" \
         -H 'Content-Type: application/json' \
         -d "$(cat <<REQEOF
 {
     "model": "${MODEL_NAME}",
     "messages": [{"role": "user", "content": "${PROMPT}"}],
-    "max_tokens": -1,
+    "max_tokens": 4096,
     "temperature": 0.6,
     "top_p": 0.95,
     "stream": false
 }
 REQEOF
-)")
+)") || { echo "CURL FAILED (server may have crashed)" >&2; return 1; }
 
     local tokens tg_speed pp_speed draft_n draft_accepted
     tokens=$(echo "${response}" | python3 -c "import sys,json; t=json.load(sys.stdin)['usage']; print(t.get('completion_tokens', 0))")
@@ -113,8 +119,12 @@ run_bench() {
 
     local speeds=()
     for rep in $(seq 1 ${REPS}); do
+        if ! kill -0 "${SERVER_PID}" 2>/dev/null; then
+            log "    SERVER CRASHED — aborting config"
+            break
+        fi
         local speed
-        speed=$(run_request "${rep}" 2>/dev/null || echo "0.0")
+        speed=$(run_request "${rep}" || echo "0.0")
         if [[ "${speed}" != "0.0" ]]; then
             speeds+=("${speed}")
         else

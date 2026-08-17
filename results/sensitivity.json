@@ -1,131 +1,84 @@
 {
   "probe_quant": "Q4_0",
   "chunks": 16,
+  "context_size": 4096,
   "groups": {
     "attn_gate.weight": {
-      "kl_mean": 0.009983,
-      "kl_max": 9.760502,
-      "kl_p999": 2.217777,
-      "assigned_quant": "q8_0",
+      "kl_mean": 0.11620676517486572,
+      "kl_max": 30.470979690551758,
+      "kl_p999": 18.088106155395508,
       "n_tensors": 48
     },
     "attn_k.weight": {
-      "kl_mean": 0.00324,
-      "kl_max": 6.414201,
-      "kl_p999": 0.255029,
-      "assigned_quant": "q6_k",
+      "kl_mean": 0.06373341381549835,
+      "kl_max": 25.512155532836914,
+      "kl_p999": 13.964982032775879,
       "n_tensors": 16
     },
     "attn_output.weight": {
-      "kl_mean": 0.003477,
-      "kl_max": 8.151463,
-      "kl_p999": 0.094929,
-      "assigned_quant": "q6_k",
+      "kl_mean": 0.05612890422344208,
+      "kl_max": 29.812673568725586,
+      "kl_p999": 12.379521369934082,
       "n_tensors": 16
     },
     "attn_q.weight": {
-      "kl_mean": 0.004762,
-      "kl_max": 5.442611,
-      "kl_p999": 0.536987,
-      "assigned_quant": "q6_k",
+      "kl_mean": 0.10165167599916458,
+      "kl_max": 30.169588088989258,
+      "kl_p999": 16.595041275024414,
       "n_tensors": 16
     },
     "attn_qkv.weight": {
-      "kl_mean": 0.010453,
-      "kl_max": 7.635287,
-      "kl_p999": 1.869333,
-      "assigned_quant": "f16",
+      "kl_mean": 0.14233502745628357,
+      "kl_max": 31.055490493774414,
+      "kl_p999": 19.498647689819336,
       "n_tensors": 48
     },
     "attn_v.weight": {
-      "kl_mean": 0.005118,
-      "kl_max": 7.43786,
-      "kl_p999": 0.371114,
-      "assigned_quant": "q8_0",
+      "kl_mean": 0.1371987760066986,
+      "kl_max": 34.36546325683594,
+      "kl_p999": 19.236900329589844,
       "n_tensors": 16
     },
     "ffn_down.weight [edge]": {
-      "kl_mean": 0.003778,
-      "kl_max": 4.215122,
-      "kl_p999": 0.09246,
-      "assigned_quant": "q6_k",
-      "n_tensors": 13
+      "kl_mean": 0.04193110018968582,
+      "kl_max": 26.572290420532227,
+      "kl_p999": 10.25943660736084,
+      "n_tensors": 14
     },
     "ffn_down.weight [middle]": {
-      "kl_mean": 0.00655,
-      "kl_max": 9.980112,
-      "kl_p999": 0.480337,
-      "assigned_quant": "q8_0",
-      "n_tensors": 51
+      "kl_mean": 0.07064267992973328,
+      "kl_max": 27.18181037902832,
+      "kl_p999": 13.232664108276367,
+      "n_tensors": 50
     },
     "ffn_gate.weight [edge]": {
-      "kl_mean": 0.001545,
-      "kl_max": 2.167619,
-      "kl_p999": 0.042409,
-      "assigned_quant": null,
-      "n_tensors": 13
+      "kl_mean": 0.032294124364852905,
+      "kl_max": 25.4750919342041,
+      "kl_p999": 8.418508529663086,
+      "n_tensors": 14
     },
     "ffn_gate.weight [middle]": {
-      "kl_mean": 0.003925,
-      "kl_max": 2.214246,
-      "kl_p999": 0.390128,
-      "assigned_quant": "q6_k",
-      "n_tensors": 51
+      "kl_mean": 0.07214551419019699,
+      "kl_max": 27.63829231262207,
+      "kl_p999": 13.53107738494873,
+      "n_tensors": 50
     },
     "ffn_up.weight [edge]": {
-      "kl_mean": 0.001399,
-      "kl_max": 0.156365,
-      "kl_p999": 0.08513,
-      "assigned_quant": null,
-      "n_tensors": 13
+      "kl_mean": 0.03435056656599045,
+      "kl_max": 24.778779983520508,
+      "kl_p999": 8.508435249328613,
+      "n_tensors": 14
     },
     "ffn_up.weight [middle]": {
-      "kl_mean": 0.005747,
-      "kl_max": 6.082976,
-      "kl_p999": 0.355738,
-      "assigned_quant": "q8_0",
-      "n_tensors": 51
+      "kl_mean": 0.08152914047241211,
+      "kl_max": 28.476486206054688,
+      "kl_p999": 15.128180503845215,
+      "n_tensors": 50
     },
     "output.weight": {
-      "kl_mean": 0.000483,
-      "kl_max": 0.009468,
-      "kl_p999": 0.005768,
-      "assigned_quant": null,
-      "n_tensors": 1
-    },
-    "ssm_alpha.weight": {
-      "kl_mean": 0.001408,
-      "kl_max": 1.677274,
-      "kl_p999": 0.073543,
-      "assigned_quant": null,
-      "n_tensors": 48
-    },
-    "ssm_beta.weight": {
-      "kl_mean": 0.001254,
-      "kl_max": 2.14314,
-      "kl_p999": 0.062379,
-      "assigned_quant": null,
-      "n_tensors": 48
-    },
-    "ssm_conv1d.weight": {
-      "kl_mean": null,
-      "kl_max": 4e-06,
-      "kl_p999": 1e-06,
-      "assigned_quant": "N/A",
-      "n_tensors": 48
-    },
-    "ssm_out.weight": {
-      "kl_mean": 0.005334,
-      "kl_max": 7.283775,
-      "kl_p999": 0.380365,
-      "assigned_quant": "q8_0",
-      "n_tensors": 48
-    },
-    "token_embd.weight": {
-      "kl_mean": 0.000577,
-      "kl_max": 0.262888,
-      "kl_p999": 0.033689,
-      "assigned_quant": null,
+      "kl_mean": 0.0036584350746124983,
+      "kl_max": 0.10872280597686768,
+      "kl_p999": 0.04732980206608772,
       "n_tensors": 1
     }
   }

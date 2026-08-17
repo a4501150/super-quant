@@ -13,6 +13,8 @@ MODEL_CONFIG_DIR := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && 
 F16_GGUF := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$F16_GGUF')
 LLAMA_PERPLEXITY := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$LLAMA_PERPLEXITY')
 LLAMA_QUANTIZE := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$LLAMA_QUANTIZE')
+GGUF_ARCH_KEY := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$GGUF_ARCH_KEY')
+LLAMACPP_DIR := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$LLAMACPP_DIR')
 
 help:
 	@echo "Super-Quant: Advanced GGUF Quantization Pipeline"
@@ -61,16 +63,19 @@ recalibrate:
 	@$(UV) python3 $(SRC)/prepare_calibration.py --output-dir $(PROJECT_DIR)/calibration --model-id $(MODEL_ID) --force
 
 imatrix:
-	@$(UV) bash $(SCRIPTS)/03_generate_imatrix.sh
+	@$(UV) bash $(SCRIPTS)/03_generate_imatrix_gpu.sh
 
 sensitivity:
 	@$(UV) python3 $(SRC)/sensitivity_analysis.py \
-		--model $(F16_GGUF) \
+		--model-id $(MODEL_ID) \
 		--test-file $(PROJECT_DIR)/calibration/combined.txt \
-		--llama-perplexity $(LLAMA_PERPLEXITY) \
-		--llama-quantize $(LLAMA_QUANTIZE) \
-		--output $(MODEL_CONFIG_DIR)/tensor_overrides.txt \
+		--gguf-arch-key $(GGUF_ARCH_KEY) \
+		--llamacpp-dir $(LLAMACPP_DIR) \
 		--output-json $(PROJECT_DIR)/results/sensitivity.json
+	@$(UV) python3 $(SRC)/generate_hybrid_overrides.py \
+		--model $(F16_GGUF) \
+		--sensitivity $(PROJECT_DIR)/results/sensitivity.json \
+		--output $(MODEL_CONFIG_DIR)/tensor_overrides.txt
 
 quantize:
 	@$(UV) bash $(SCRIPTS)/04_quantize.sh
@@ -80,6 +85,9 @@ benchmark:
 
 bench-dflash:
 	@$(UV) bash $(SCRIPTS)/09_bench_dflash.sh
+
+bench-kv:
+	@$(UV) bash $(SCRIPTS)/10_bench_kv_types.sh
 
 compare:
 	@$(UV) python3 $(SRC)/compare_results.py --results-dir $(PROJECT_DIR)/results --model-name $(MODEL_NAME)
@@ -91,10 +99,11 @@ QUANT     ?= UD-Q6_K
 CTX       ?= 524288
 PORT      ?= 8000
 PARALLEL  ?= 5
-KV_TYPE   ?= q8_0
+KV_TYPE_K ?= q8_0
+KV_TYPE_V ?= q8_0
 SPEC_TYPE ?= none
 serve:
-	@SPEC_TYPE=$(SPEC_TYPE) $(UV) bash $(SCRIPTS)/06_serve.sh $(QUANT) $(CTX) $(PORT) $(PARALLEL) $(KV_TYPE)
+	@SPEC_TYPE=$(SPEC_TYPE) $(UV) bash $(SCRIPTS)/06_serve.sh $(QUANT) $(CTX) $(PORT) $(PARALLEL) $(KV_TYPE_K) $(KV_TYPE_V)
 
 MODELS_DIR := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$MODELS_DIR')
 

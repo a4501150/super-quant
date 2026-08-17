@@ -9,6 +9,7 @@ truncated mid-conversation or mid-reasoning chain.
 
 import argparse
 import os
+import re
 import random
 
 from datasets import load_dataset
@@ -201,6 +202,23 @@ def build_calibration(output_dir: str, model_id: str, token_targets: dict[str, i
         for source in cfg["sources"]:
             texts = load_source(source)
             domain_texts[cfg["domain_group"]].extend(texts)
+
+    special_tokens = set(tokenizer.all_special_tokens)
+    if special_tokens:
+        pattern = re.compile("|".join(re.escape(t) for t in sorted(special_tokens, key=len, reverse=True)))
+        stripped_total = 0
+        for domain in domain_texts:
+            cleaned = []
+            for text in domain_texts[domain]:
+                new_text = pattern.sub("", text)
+                if new_text != text:
+                    stripped_total += 1
+                new_text = new_text.strip()
+                if len(new_text) >= 50:
+                    cleaned.append(new_text)
+            domain_texts[domain] = cleaned
+        if stripped_total:
+            print(f"\n  Stripped special tokens from {stripped_total} samples ({', '.join(sorted(special_tokens))})")
 
     print(f"\n{'='*60}")
     print("  Selecting samples to token budgets")

@@ -9,7 +9,8 @@ QUANT="${1:-UD-Q6_K}"
 CTX="${2:-524288}"
 PORT="${3:-8080}"
 PARALLEL="${4:-5}"
-KV_TYPE="${5:-q8_0}"
+KV_TYPE_K="${5:-q8_0}"
+KV_TYPE_V="${6:-q8_0}"
 
 # Find the GGUF file
 GGUF="${MODELS_DIR}/${MODEL_NAME}-${QUANT}.gguf"
@@ -21,8 +22,8 @@ if [[ ! -f "${GGUF}" ]]; then
         [[ -f "$f" ]] && echo "  $(basename "$f" .gguf | sed "s/${MODEL_NAME}-//")"
     done
     echo ""
-    echo "Usage: $0 [QUANT] [CTX_PER_SLOT] [PORT] [PARALLEL] [KV_TYPE]"
-    echo "  e.g. $0 UD-Q6_K 524288 8080 5 q8_0"
+    echo "Usage: $0 [QUANT] [CTX_PER_SLOT] [PORT] [PARALLEL] [KV_TYPE_K] [KV_TYPE_V]"
+    echo "  e.g. $0 UD-Q6_K 524288 8080 5 q8_0 turbo4"
     exit 1
 fi
 
@@ -30,7 +31,7 @@ SIZE=$(du -sh "${GGUF}" | cut -f1)
 echo "=== Launching llama-server ==="
 echo "Model:    ${GGUF} (${SIZE})"
 echo "Context:  ${CTX} shared pool (unified KV), ${PARALLEL} slots"
-echo "KV cache: ${KV_TYPE} (unified)"
+echo "KV cache: K=${KV_TYPE_K} V=${KV_TYPE_V} (unified)"
 echo "Port:     ${PORT}"
 echo "GPU:      ${GPU_LAYERS} layers offloaded"
 
@@ -41,18 +42,25 @@ ARGS=(
     -fa on
     -c "${CTX}"
     --parallel "${PARALLEL}"
-    --cache-type-k "${KV_TYPE}"
-    --cache-type-v "${KV_TYPE}"
+    --cache-type-k "${KV_TYPE_K}"
+    --cache-type-v "${KV_TYPE_V}"
     -kvu
     --cache-ram -1
     --host 0.0.0.0
     --port "${PORT}"
     --threads "${THREADS}"
     --metrics
+    --alias "${MODEL_ALIAS:-${MODEL_NAME}}"
     --jinja
     --reasoning on
     --chat-template-kwargs '{"enable_thinking":true,"preserve_thinking":true}'
 )
+
+# Custom chat template (per-model, optional)
+if [[ -n "${CHAT_TEMPLATE_FILE:-}" ]]; then
+    echo "Template: ${CHAT_TEMPLATE_FILE}"
+    ARGS+=(--chat-template-file "${CHAT_TEMPLATE_FILE}")
+fi
 
 # YaRN context extension beyond native max
 if (( CTX > NATIVE_CTX )); then
@@ -67,16 +75,7 @@ if (( CTX > NATIVE_CTX )); then
 fi
 
 # Speculative decoding: DFlash > MTP (DFlash doesn't hurt concurrent throughput)
-SPEC_TYPE="${SPEC_TYPE:-auto}"
-if [[ "${SPEC_TYPE}" == "auto" ]]; then
-    if [[ -n "${DFLASH_DRAFT_GGUF:-}" ]] && [[ -f "${DFLASH_DRAFT_GGUF}" ]]; then
-        SPEC_TYPE="dflash"
-    elif [[ "${MTP_ENABLED}" = true ]]; then
-        SPEC_TYPE="mtp"
-    else
-        SPEC_TYPE="none"
-    fi
-fi
+SPEC_TYPE="${SPEC_TYPE:-none}"
 
 if [[ "${SPEC_TYPE}" == "dflash" ]]; then
     if [[ ! -f "${DFLASH_DRAFT_GGUF:-}" ]]; then
@@ -125,7 +124,7 @@ for i in $(seq 1 "${TIMEOUT}"); do
         echo "Test:"
         echo "  curl -s http://localhost:${PORT}/v1/chat/completions \\"
         echo "    -H 'Content-Type: application/json' \\"
-        echo "    -d '{\"model\":\"${MODEL_NAME}\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}]}'"
+        echo "    -d '{\"model\":\"${MODEL_ALIAS:-${MODEL_NAME}}\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}]}'"
         echo ""
         echo "Press Ctrl+C to stop."
         wait ${SERVER_PID}

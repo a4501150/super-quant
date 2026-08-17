@@ -19,13 +19,17 @@ import shutil
 
 EDGE_FRACTION = 0.12
 
-FORCED_F32 = {"ssm_alpha.weight", "ssm_beta.weight"}
+# SSM recurrence tensors — preserve at source precision (BF16 -> f16)
+FORCED_F16_SSM = {
+    "ssm_alpha.weight", "ssm_beta.weight", "ssm_out.weight",
+    "ssm_conv1d.weight", "ssm_norm.weight", "ssm_dt.bias", "ssm_a",
+}
 
-SKIP_SUFFIXES = {
+# Small tensors that must stay at source precision (norms, biases)
+FORCED_F16_SMALL = {
     "attn_norm.weight", "post_attention_norm.weight",
     "attn_q_norm.weight", "attn_k_norm.weight",
-    "output_norm.weight", "ssm_norm.weight",
-    "ssm_dt.bias", "ssm_a",
+    "output_norm.weight",
 }
 
 # Groups where sensitivity probe is unreliable — let base quant handle
@@ -35,7 +39,6 @@ BASE_GROUPS = {
     "ffn_up.weight [middle]",
     "ffn_gate.weight [edge]",
     "ffn_up.weight [edge]",
-    "ssm_conv1d.weight",
     "output.weight",
     "token_embd.weight",
 }
@@ -94,11 +97,7 @@ def build_groups(tensor_names):
             continue
 
         suffix = re.sub(r"^blk\.\d+\.", "", name)
-        if suffix in SKIP_SUFFIXES:
-            skip_tensors.append(name)
-            continue
-
-        if suffix in FORCED_F32:
+        if suffix in FORCED_F16_SSM or suffix in FORCED_F16_SMALL:
             skip_tensors.append(name)
             continue
 
@@ -126,16 +125,18 @@ def build_groups(tensor_names):
         else:
             groups[suffix] = names
 
-    forced_f32_tensors = []
+    forced_f16_tensors = []
     for name in tensor_names:
         suffix = re.sub(r"^blk\.\d+\.", "", name)
         m = re.match(r"^blk\.(\d+)\.", name)
         if m and int(m.group(1)) in mtp_blocks:
             continue
-        if suffix in FORCED_F32:
-            forced_f32_tensors.append(name)
+        if suffix in FORCED_F16_SSM or suffix in FORCED_F16_SMALL:
+            forced_f16_tensors.append(name)
+        elif not re.match(r"^blk\.\d+\.", name) and suffix in FORCED_F16_SMALL:
+            forced_f16_tensors.append(name)
 
-    return groups, skip_tensors, mtp_tensors, forced_f32_tensors
+    return groups, skip_tensors, mtp_tensors, forced_f16_tensors
 
 
 def assign_level(kl_mean, group_name):
@@ -161,7 +162,7 @@ def main():
         sensitivity = json.load(f)
 
     tensor_names = read_tensor_names(args.model)
-    groups, skip_tensors, mtp_tensors, forced_f32 = build_groups(tensor_names)
+    groups, skip_tensors, mtp_tensors, forced_f16 = build_groups(tensor_names)
 
     lines = []
     lines.append("# Hybrid tensor overrides — sensitivity data + APEX research + MTP protection")
@@ -169,9 +170,9 @@ def main():
     lines.append("#")
 
     lines.append("")
-    lines.append("# ssm_alpha/beta — f32 (APEX research, regression-confirmed)")
-    for name in sorted(forced_f32):
-        lines.append(f"^{re.escape(name)}$=f32")
+    lines.append("# SSM recurrence + small tensors — f16 (preserve source BF16 precision)")
+    for name in sorted(forced_f16):
+        lines.append(f"^{re.escape(name)}$=f16")
 
     lines.append("")
     lines.append("# MTP layer — f16 (speculative decoding accuracy)")
@@ -204,7 +205,7 @@ def main():
     total_tensors = sum(len(v) for v in groups.values())
 
     print(f"Override summary:")
-    print(f"  f32:  {len(forced_f32)} tensors (ssm_alpha/beta)")
+    print(f"  f16:  {len(forced_f16)} tensors (SSM recurrence + norms)")
     print(f"  f16:  {len(mtp_tensors)} tensors (MTP)")
     for level_name in ["f16", "q8_0", "q6_k"]:
         count = sum(len(tl) for _, tl, _, _, lv in ranked if lv == level_name)

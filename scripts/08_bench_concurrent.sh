@@ -79,7 +79,7 @@ start_server() {
 fire_request() {
     local slot_id="$1"
     local outfile="${TMPDIR_BENCH}/resp_${slot_id}.json"
-    curl -sf "http://127.0.0.1:${PORT}/v1/chat/completions" \
+    curl -sf --max-time 300 "http://127.0.0.1:${PORT}/v1/chat/completions" \
         -H 'Content-Type: application/json' \
         -d "{\"model\":\"${MODEL_NAME}\",\"messages\":[{\"role\":\"user\",\"content\":\"${PROMPT}\"}],\"max_tokens\":${MAX_TOKENS},\"temperature\":0.6,\"top_p\":0.95,\"stream\":false}" \
         -o "${outfile}" 2>/dev/null
@@ -107,6 +107,11 @@ run_config() {
     # Warmup
     log "  Warmup..."
     fire_request "warmup"
+    if ! kill -0 "${SERVER_PID}" 2>/dev/null; then
+        log "  SERVER CRASHED during warmup — skipping"
+        stop_server
+        return
+    fi
     rm -f "${TMPDIR_BENCH}/resp_warmup.json"
 
     # Fire N concurrent requests
