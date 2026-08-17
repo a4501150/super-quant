@@ -1,0 +1,71 @@
+{
+  "benchmarks": [
+    {
+      "name": "Qwen3.8-27B-AEON-F16",
+      "file": "Qwen3.8-27B-AEON-F16.gguf",
+      "model_type": "qwen35 27B F16",
+      "size_gb": 50.89,
+      "pp_tokens_per_sec": 2974.1,
+      "pp_stddev": 1068.1,
+      "tg_tokens_per_sec": 30.0,
+      "tg_stddev": 3.4,
+      "ppl": "5.7102"
+    },
+    {
+      "name": "Qwen3.8-27B-AEON-UD-IQ4_XS",
+      "file": "Qwen3.8-27B-AEON-UD-IQ4_XS.gguf",
+      "model_type": "qwen35 27B IQ4_XS - 4.25 bpw",
+      "size_gb": 25.93,
+      "pp_tokens_per_sec": 3889.1,
+      "pp_stddev": 824.0,
+      "tg_tokens_per_sec": 55.3,
+      "tg_stddev": 0.1,
+      "ppl": "5.7288",
+      "kl_mean": "0.023952",
+      "kl_max": "9.371756",
+      "kl_p999": "3.260001"
+    },
+    {
+      "name": "Qwen3.8-27B-AEON-UD-Q5_K_M",
+      "file": "Qwen3.8-27B-AEON-UD-Q5_K_M.gguf",
+      "model_type": "qwen35 27B Q5_K - Medium",
+      "size_gb": 28.68,
+      "pp_tokens_per_sec": 3683.9,
+      "pp_stddev": 680.5,
+      "tg_tokens_per_sec": 53.0,
+      "tg_stddev": 1.4,
+      "ppl": "5.7243",
+      "kl_mean": "0.008735",
+      "kl_max": "6.203520",
+      "kl_p999": "0.977846"
+    },
+    {
+      "name": "Qwen3.8-27B-AEON-UD-Q6_K",
+      "file": "Qwen3.8-27B-AEON-UD-Q6_K.gguf",
+      "model_type": "qwen35 27B Q6_K",
+      "size_gb": 30.57,
+      "pp_tokens_per_sec": 3232.1,
+      "pp_stddev": 947.7,
+      "tg_tokens_per_sec": 48.7,
+      "tg_stddev": 0.3,
+      "ppl": "5.7288",
+      "kl_mean": "0.004169",
+      "kl_max": "7.200660",
+      "kl_p999": "0.382878"
+    },
+    {
+      "name": "Qwen3.8-27B-AEON-UD-Q8_0",
+      "file": "Qwen3.8-27B-AEON-UD-Q8_0.gguf",
+      "model_type": "qwen35 27B Q8_0",
+      "size_gb": 34.74,
+      "pp_tokens_per_sec": 3378.8,
+      "pp_stddev": 1234.1,
+      "tg_tokens_per_sec": 39.9,
+      "tg_stddev": 6.8,
+      "ppl": "5.7181",
+      "kl_mean": "0.001968",
+      "kl_max": "1.830235",
+      "kl_p999": "0.249918"
+    }
+  ]
+}
