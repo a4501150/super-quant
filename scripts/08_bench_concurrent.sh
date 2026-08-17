@@ -14,8 +14,8 @@ PORT=8090
 TOTAL_CTX=$((NATIVE_CTX / 2))
 PROMPT="Write a detailed Python implementation of a red-black tree with insert, delete, and search operations. Include type hints and docstrings for all methods."
 MAX_TOKENS=1024
-KV_TYPE_K="${KV_TYPE_K:-q8_0}"
-KV_TYPE_V="${KV_TYPE_V:-q8_0}"
+KV_TYPE_K="${KV_TYPE_K:-}"
+KV_TYPE_V="${KV_TYPE_V:-}"
 
 SERVER_PID=""
 
@@ -50,8 +50,6 @@ start_server() {
         -fa on
         -c "${TOTAL_CTX}"
         --parallel "${parallel}"
-        --cache-type-k "${KV_TYPE_K}"
-        --cache-type-v "${KV_TYPE_V}"
         -kvu
         --host 127.0.0.1
         --port "${PORT}"
@@ -60,6 +58,9 @@ start_server() {
         --jinja
         "$@"
     )
+
+    [[ -n "${KV_TYPE_K}" ]] && args+=(--cache-type-k "${KV_TYPE_K}")
+    [[ -n "${KV_TYPE_V}" ]] && args+=(--cache-type-v "${KV_TYPE_V}")
 
     "${LLAMA_SERVER}" "${args[@]}" &>/dev/null &
     SERVER_PID=$!

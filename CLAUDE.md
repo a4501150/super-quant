@@ -44,14 +44,14 @@ Concurrent DSpark (UD-Q6_K, 1-5 users): 1.47x per-req at 1 user (72 vs 49 t/s), 
 
 ## Deployment config
 
-Default: `make serve` → UD-Q6_K, DSpark speculative decoding, 512k context, 5 parallel slots, q8_0 KV cache, unified KV, YaRN, vision.
+Default: `make serve` → UD-Q6_K, DSpark speculative decoding, 512k context, 5 parallel slots, f16 KV cache, unified KV, YaRN, vision.
 
 - **DSpark speculative decoding** uses `RadixArk/Qwen3.8-27B-DSpark` (1.36B params, 2.6 GB BF16 GGUF). An extension of DFlash that adds a low-rank Markov head for better draft quality. Cross-attends to target model hidden states at layers 4/16/28/40/52. Block size 7, meaning 7 draft tokens per round. Scales to concurrent users — aggregate throughput stays above baseline at 1-5 users (unlike MTP which collapses at 2+ users).
 - **DSpark acceptance varies by content type** — math/reasoning: 40-58% acceptance, 3.7-5.1 mean tokens per round. Creative writing: 13% acceptance, 1.9 mean tokens per round. The drafter excels at structured/predictable content.
 - **Reasoning is per-request** — the serve script does not set `--reasoning on` or `--chat-template-kwargs`. The harness controls reasoning via per-request `reasoning_effort` (`xhigh`/`medium`/`low`/`none`). Qwen3.8 recommended sampling: temp=0.6, top_k=20, top_p=0.95.
 - **YaRN auto-activates** when CTX > NATIVE_CTX (set per model in `configs/<model>/model.env`). `--override-kv ${GGUF_ARCH_KEY}.context_length=int:CTX` bypasses server-context.cpp cap bug (llama.cpp #22140).
 - **Unified KV** (`-kvu`) — single shared KV buffer across all slots, better memory pooling with lazy allocation.
-- **q8_0 KV cache** — hybrid SSM means only 16/64 layers have KV cache, so q8_0 is cheap. Turbo KV types are broken (see gotcha above).
+- **f16 KV cache** (llama.cpp default) — KV cache quantization (even q8_0) introduces noise that compounds across long attention spans, degrading reasoning quality in thinking models. Hybrid SSM means only 16/64 layers have KV cache, so f16 is cheap. Override with `KV_TYPE_K=q8_0 KV_TYPE_V=q8_0 make serve` if VRAM-constrained.
 - **MTP fallback** — use `SPEC_TYPE=mtp make serve` for MTP. Better on creative/agentic content but kills concurrent throughput (saturates GPU at 1 slot, 2.3x worse at 5 concurrent users).
 
 ## Paths

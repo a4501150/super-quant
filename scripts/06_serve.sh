@@ -9,8 +9,8 @@ QUANT="${1:-UD-Q6_K}"
 CTX="${2:-524288}"
 PORT="${3:-8080}"
 PARALLEL="${4:-5}"
-KV_TYPE_K="${5:-q8_0}"
-KV_TYPE_V="${6:-q8_0}"
+KV_TYPE_K="${5:-}"
+KV_TYPE_V="${6:-}"
 
 # Find the GGUF file
 GGUF="${MODELS_DIR}/${MODEL_NAME}-${QUANT}.gguf"
@@ -31,7 +31,7 @@ SIZE=$(du -sh "${GGUF}" | cut -f1)
 echo "=== Launching llama-server ==="
 echo "Model:    ${GGUF} (${SIZE})"
 echo "Context:  ${CTX} shared pool (unified KV), ${PARALLEL} slots"
-echo "KV cache: K=${KV_TYPE_K} V=${KV_TYPE_V} (unified)"
+echo "KV cache: K=${KV_TYPE_K:-f16} V=${KV_TYPE_V:-f16} (unified)"
 echo "Port:     ${PORT}"
 echo "GPU:      ${GPU_LAYERS} layers offloaded"
 
@@ -42,8 +42,6 @@ ARGS=(
     -fa on
     -c "${CTX}"
     --parallel "${PARALLEL}"
-    --cache-type-k "${KV_TYPE_K}"
-    --cache-type-v "${KV_TYPE_V}"
     -kvu
     --cache-ram -1
     --host 0.0.0.0
@@ -58,6 +56,14 @@ ARGS=(
 if [[ -n "${CHAT_TEMPLATE_FILE:-}" ]]; then
     echo "Template: ${CHAT_TEMPLATE_FILE}"
     ARGS+=(--chat-template-file "${CHAT_TEMPLATE_FILE}")
+fi
+
+# KV cache type override (default: f16, llama.cpp native default)
+if [[ -n "${KV_TYPE_K}" ]]; then
+    ARGS+=(--cache-type-k "${KV_TYPE_K}")
+fi
+if [[ -n "${KV_TYPE_V}" ]]; then
+    ARGS+=(--cache-type-v "${KV_TYPE_V}")
 fi
 
 # YaRN context extension beyond native max

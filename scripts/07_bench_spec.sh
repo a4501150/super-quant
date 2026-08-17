@@ -12,8 +12,8 @@ RESULT_FILE="${RESULTS_DIR}/spec_benchmark_$(date +%Y%m%d_%H%M%S).log"
 PORT=8090
 REPS=3
 CTX=32768
-KV_TYPE_K="${KV_TYPE_K:-q8_0}"
-KV_TYPE_V="${KV_TYPE_V:-q8_0}"
+KV_TYPE_K="${KV_TYPE_K:-}"
+KV_TYPE_V="${KV_TYPE_V:-}"
 PROMPT="Write a detailed Python implementation of a red-black tree with insert, delete, and search operations. Include type hints and docstrings for all methods."
 
 log() { echo "$1" | tee -a "${RESULT_FILE}"; }
@@ -26,8 +26,6 @@ start_server() {
         -ngl "${GPU_LAYERS}"
         -fa on
         -c "${CTX}"
-        --cache-type-k "${KV_TYPE_K}"
-        --cache-type-v "${KV_TYPE_V}"
         --host 127.0.0.1
         --port "${PORT}"
         --threads "${THREADS}"
@@ -35,6 +33,9 @@ start_server() {
         --jinja
         "$@"
     )
+
+    [[ -n "${KV_TYPE_K}" ]] && args+=(--cache-type-k "${KV_TYPE_K}")
+    [[ -n "${KV_TYPE_V}" ]] && args+=(--cache-type-v "${KV_TYPE_V}")
 
     log "  Starting server: ${label}"
     "${LLAMA_SERVER}" "${args[@]}" &>/dev/null &

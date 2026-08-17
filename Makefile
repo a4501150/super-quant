@@ -99,8 +99,6 @@ QUANT     ?= UD-Q6_K
 CTX       ?= 524288
 PORT      ?= 8000
 PARALLEL  ?= 5
-KV_TYPE_K ?= q8_0
-KV_TYPE_V ?= q8_0
 SPEC_TYPE ?= dspark
 serve:
 	@SPEC_TYPE=$(SPEC_TYPE) $(UV) bash $(SCRIPTS)/06_serve.sh $(QUANT) $(CTX) $(PORT) $(PARALLEL) $(KV_TYPE_K) $(KV_TYPE_V)
