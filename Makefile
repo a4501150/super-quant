@@ -1,4 +1,4 @@
-.PHONY: all setup download download-dflash convert calibrate recalibrate imatrix sensitivity quantize benchmark bench-dflash compare serve clean help
+.PHONY: all setup download convert calibrate recalibrate imatrix sensitivity quantize benchmark bench-spec compare serve clean help
 
 SHELL := /bin/bash
 PROJECT_DIR := $(shell pwd)
@@ -31,12 +31,12 @@ help:
 	@echo "  make quantize     Quantize to all target levels"
 	@echo "  make benchmark    Run perplexity + throughput benchmarks"
 	@echo "  make compare      Print comparison table"
-	@echo "  make serve        Launch llama-server (DFlash/MTP/none)"
+	@echo "  make serve        Launch llama-server (DSpark/MTP/none)"
 	@echo ""
 	@echo "Serving options:"
-	@echo "  make serve                                          # Q6_K, DFlash (auto), 5 slots"
+	@echo "  make serve                                          # Q6_K, DSpark, 5 slots"
 	@echo "  make serve QUANT=UD-Q8_0 CTX=262144 PARALLEL=3     # Q8_0, native ctx, 3 slots"
-	@echo "  make serve SPEC_TYPE=mtp                            # Force MTP instead of DFlash"
+	@echo "  make serve SPEC_TYPE=mtp                            # MTP instead of DSpark"
 	@echo "  make serve SPEC_TYPE=none                           # No speculative decoding"
 	@echo ""
 	@echo "Cleanup:"
@@ -50,8 +50,8 @@ setup:
 download:
 	@$(UV) bash $(SCRIPTS)/01_download_model.sh
 
-download-dflash:
-	@$(UV) bash $(SCRIPTS)/01b_download_dflash.sh
+bench-spec:
+	@$(UV) bash $(SCRIPTS)/07_bench_spec.sh
 
 convert:
 	@$(UV) bash $(SCRIPTS)/02_convert_to_gguf.sh
@@ -83,8 +83,8 @@ quantize:
 benchmark:
 	@$(UV) bash $(SCRIPTS)/05_benchmark.sh
 
-bench-dflash:
-	@$(UV) bash $(SCRIPTS)/09_bench_dflash.sh
+bench-concurrent:
+	@$(UV) bash $(SCRIPTS)/08_bench_concurrent.sh
 
 bench-kv:
 	@$(UV) bash $(SCRIPTS)/10_bench_kv_types.sh
@@ -101,7 +101,7 @@ PORT      ?= 8000
 PARALLEL  ?= 5
 KV_TYPE_K ?= q8_0
 KV_TYPE_V ?= q8_0
-SPEC_TYPE ?= none
+SPEC_TYPE ?= dspark
 serve:
 	@SPEC_TYPE=$(SPEC_TYPE) $(UV) bash $(SCRIPTS)/06_serve.sh $(QUANT) $(CTX) $(PORT) $(PARALLEL) $(KV_TYPE_K) $(KV_TYPE_V)
 

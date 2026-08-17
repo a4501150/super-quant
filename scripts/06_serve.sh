@@ -52,8 +52,6 @@ ARGS=(
     --metrics
     --alias "${MODEL_ALIAS:-${MODEL_NAME}}"
     --jinja
-    --reasoning on
-    --chat-template-kwargs '{"enable_thinking":true,"preserve_thinking":true}'
 )
 
 # Custom chat template (per-model, optional)
@@ -74,21 +72,22 @@ if (( CTX > NATIVE_CTX )); then
     )
 fi
 
-# Speculative decoding: DFlash > MTP (DFlash doesn't hurt concurrent throughput)
-SPEC_TYPE="${SPEC_TYPE:-none}"
+# Speculative decoding: DSpark > MTP (DSpark doesn't hurt concurrent throughput)
+SPEC_TYPE="${SPEC_TYPE:-dspark}"
 
-if [[ "${SPEC_TYPE}" == "dflash" ]]; then
-    if [[ ! -f "${DFLASH_DRAFT_GGUF:-}" ]]; then
-        echo "ERROR: DFlash draft not found: ${DFLASH_DRAFT_GGUF:-<unset>}"
-        echo "Run: make download-dflash"
+if [[ "${SPEC_TYPE}" == "dspark" ]]; then
+    DSPARK_DRAFT="${DSPARK_DRAFT_GGUF:-${MODELS_DIR}/Qwen3.8-27B-DSpark-BF16.gguf}"
+    if [[ ! -f "${DSPARK_DRAFT}" ]]; then
+        echo "ERROR: DSpark draft not found: ${DSPARK_DRAFT}"
+        echo "Download: uv run python3 -c \"from huggingface_hub import hf_hub_download; print(hf_hub_download('erlidev/Qwen3.8-27B-DSpark-GGUF', 'Qwen3.8-27B-DSpark-BF16.gguf'))\""
         exit 1
     fi
-    echo "DFlash:   ${DFLASH_DRAFT_GGUF}"
+    echo "DSpark:   ${DSPARK_DRAFT}"
     ARGS+=(
-        --spec-type dflash
-        -md "${DFLASH_DRAFT_GGUF}"
-        --spec-draft-n-max 8
-        --spec-draft-ngl "${GPU_LAYERS}"
+        --spec-type draft-dspark
+        --spec-draft-model "${DSPARK_DRAFT}"
+        --spec-draft-n-max 7
+        -ngld "${GPU_LAYERS}"
     )
 elif [[ "${SPEC_TYPE}" == "mtp" ]]; then
     echo "MTP:      enabled (draft-n-max=${MTP_N_MAX})"

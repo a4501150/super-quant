@@ -4,8 +4,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/../configs/model.env"
 
-GGUF="${MODELS_DIR}/${MODEL_NAME}-UD-Q6_K.gguf"
-DFLASH_DRAFT="${DFLASH_DRAFT_GGUF:-${MODELS_DIR}/dflash-draft-3.6-f16.gguf}"
+GGUF="${MODELS_DIR}/${MODEL_NAME}-UD-Q8_0.gguf"
+DSPARK_DRAFT="${DSPARK_DRAFT_GGUF:-${MODELS_DIR}/Qwen3.8-27B-DSpark-BF16.gguf}"
 RESULTS_DIR="${PROJECT_DIR}/results"
 RESULT_FILE="${RESULTS_DIR}/spec_benchmark_$(date +%Y%m%d_%H%M%S).log"
 
@@ -31,8 +31,6 @@ start_server() {
         --threads "${THREADS}"
         --metrics
         --jinja
-        --reasoning on
-        --chat-template-kwargs '{"enable_thinking":true,"preserve_thinking":true}'
         "$@"
     )
 
@@ -147,10 +145,10 @@ trap stop_server EXIT
 
 log "=== Speculative Decoding Benchmark (Server Mode) ==="
 log "Target:  $(basename ${GGUF})"
-log "DFlash:  $(basename ${DFLASH_DRAFT})"
+log "DSpark:  $(basename ${DSPARK_DRAFT})"
 log "Reps:    ${REPS}, Context: ${CTX}"
 log "GPU:     $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'unknown')"
-log "Mode:    --reasoning on, unlimited tokens"
+log "Mode:    --reasoning on, reasoning_effort=medium"
 
 run_bench "1. No speculative decoding (baseline)"
 
@@ -158,32 +156,14 @@ run_bench "2. MTP (draft-mtp, n_max=3)" \
     --spec-type draft-mtp \
     --spec-draft-n-max 3
 
-if [[ -f "${DFLASH_DRAFT}" ]]; then
-    run_bench "3. DFlash (n_max=8)" \
-        --spec-type dflash \
-        -md "${DFLASH_DRAFT}" \
-        --spec-draft-n-max 8 \
-        --spec-draft-ngl "${GPU_LAYERS}"
-
-    run_bench "4. DFlash (n_max=16)" \
-        --spec-type dflash \
-        -md "${DFLASH_DRAFT}" \
-        --spec-draft-n-max 16 \
-        --spec-draft-ngl "${GPU_LAYERS}"
-
-    YARN_CTX=524288
-    YARN_SCALE=$(python3 -c "print(round(${YARN_CTX} / ${NATIVE_CTX}, 6))")
-    run_bench "5. DFlash + YaRN ${YARN_CTX}" \
-        --spec-type dflash \
-        -md "${DFLASH_DRAFT}" \
-        --spec-draft-n-max 16 \
-        --spec-draft-ngl "${GPU_LAYERS}" \
-        -c "${YARN_CTX}" \
-        --rope-scaling yarn \
-        --rope-scale "${YARN_SCALE}" \
-        --yarn-orig-ctx "${NATIVE_CTX}"
+if [[ -f "${DSPARK_DRAFT}" ]]; then
+    run_bench "3. DSpark (n_max=7)" \
+        --spec-type draft-dspark \
+        --spec-draft-model "${DSPARK_DRAFT}" \
+        --spec-draft-n-max 7 \
+        -ngld "${GPU_LAYERS}"
 else
-    log "WARNING: DFlash draft not found: ${DFLASH_DRAFT}"
+    log "WARNING: DSpark draft not found: ${DSPARK_DRAFT}"
 fi
 
 log ""

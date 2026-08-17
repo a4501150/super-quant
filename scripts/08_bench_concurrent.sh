@@ -56,8 +56,6 @@ start_server() {
         --threads "${THREADS}"
         --metrics
         --jinja
-        --reasoning on
-        --chat-template-kwargs '{"enable_thinking":true,"preserve_thinking":true}'
         "$@"
     )
 
