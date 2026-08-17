@@ -86,16 +86,19 @@ fire_request() {
 run_config() {
     local label="$1"
     local parallel="$2"
-    local mtp_n_max="$3"
+    local spec_mode="$3"
     shift 3
 
     local extra_args=("$@")
-    if [[ "${mtp_n_max}" != "0" ]]; then
-        extra_args+=(--spec-type draft-mtp --spec-draft-n-max "${mtp_n_max}")
+    if [[ "${spec_mode}" == "mtp" ]]; then
+        extra_args+=(--spec-type draft-mtp --spec-draft-n-max "${MTP_N_MAX}")
+    elif [[ "${spec_mode}" == "dspark" ]]; then
+        local draft="${DSPARK_DRAFT_GGUF:-${MODELS_DIR}/Qwen3.8-27B-DSpark-BF16.gguf}"
+        extra_args+=(--spec-type draft-dspark --spec-draft-model "${draft}" --spec-draft-n-max 7 -ngld "${GPU_LAYERS}")
     fi
 
     log ""
-    log "=== ${label} (parallel=${parallel}, mtp_n_max=${mtp_n_max}) ==="
+    log "=== ${label} (parallel=${parallel}, spec=${spec_mode}) ==="
 
     if ! start_server "${parallel}" "${extra_args[@]}"; then
         log "  SKIPPED"
@@ -179,39 +182,29 @@ run_config() {
     log "  >>> per-req avg: ${req_tps_avg} t/s | aggregate: ${aggregate_tps} t/s | accept: ${accept_rate} | wall: ${wall_secs}s | tokens: ${total_tokens}"
 
     # Append to TSV
-    echo -e "${label}\t${parallel}\t${mtp_n_max}\t${req_tps_avg}\t${aggregate_tps}\t${accept_rate}\t${wall_secs}\t${total_tokens}" >> "${RESULT_FILE}"
+    echo -e "${label}\t${parallel}\t${spec_mode}\t${req_tps_avg}\t${aggregate_tps}\t${accept_rate}\t${wall_secs}\t${total_tokens}" >> "${RESULT_FILE}"
 
     stop_server
 }
 
 # Header
-log "=== MTP Concurrent Throughput Benchmark ==="
+log "=== Concurrent Throughput Benchmark ==="
 log "Model:   $(basename "${GGUF}")"
 log "Context: ${TOTAL_CTX} total (shared across slots)"
 log "Prompt:  ${#PROMPT} chars, max_tokens=${MAX_TOKENS}"
 log "GPU:     $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'unknown')"
 log ""
 
-echo -e "config\tparallel\tmtp_n_max\treq_tps_avg\taggregate_tps\taccept_rate\twall_secs\ttotal_tokens" > "${RESULT_FILE}"
+echo -e "config\tparallel\tspec\treq_tps_avg\taggregate_tps\taccept_rate\twall_secs\ttotal_tokens" > "${RESULT_FILE}"
 
-# Baseline: no MTP
-for p in 1 2 3 4 5; do
-    run_config "baseline" "${p}" "0"
+# Baseline: no speculative decoding
+for p in 1 2 3 5; do
+    run_config "baseline" "${p}" "none"
 done
 
-# MTP with draft-n-max=1
-for p in 1 2 3 4 5; do
-    run_config "mtp-1" "${p}" "1"
-done
-
-# MTP with draft-n-max=2
-for p in 1 2 3 4 5; do
-    run_config "mtp-2" "${p}" "2"
-done
-
-# MTP with draft-n-max=3
-for p in 1 2 3 4 5; do
-    run_config "mtp-3" "${p}" "3"
+# DSpark
+for p in 1 2 3 5; do
+    run_config "dspark" "${p}" "dspark"
 done
 
 log ""
@@ -220,9 +213,9 @@ log "Results: ${RESULT_FILE}"
 log ""
 
 # Print summary table
-log "config          parallel  mtp  req_avg  agg_tps  accept   wall_s  tokens"
-log "-------------- --------  ---  -------  -------  ------   ------  ------"
-while IFS=$'\t' read -r cfg par mtp ravg agg acc wall tok; do
+log "config          parallel  spec     req_avg  agg_tps  accept   wall_s  tokens"
+log "-------------- --------  ------   -------  -------  ------   ------  ------"
+while IFS=$'\t' read -r cfg par spec ravg agg acc wall tok; do
     [[ "${cfg}" == "config" ]] && continue
-    printf "%-14s  %8s  %3s  %7s  %7s  %6s  %6s  %6s\n" "${cfg}" "${par}" "${mtp}" "${ravg}" "${agg}" "${acc}" "${wall}" "${tok}" >&2
+    printf "%-14s  %8s  %-6s   %7s  %7s  %6s  %6s  %6s\n" "${cfg}" "${par}" "${spec}" "${ravg}" "${agg}" "${acc}" "${wall}" "${tok}" >&2
 done < "${RESULT_FILE}"
