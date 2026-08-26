@@ -43,14 +43,19 @@ Results are in `results/`. Key files:
 - `results/dspark_benchmark_20260817.json` — DSpark vs MTP vs baseline single-user speculative decoding
 - `results/concurrent_benchmark_20260817_025314.tsv` — DSpark vs baseline concurrent throughput (1-5 users)
 - `results/sensitivity.json` — per-tensor group KL divergence from Q4_0 probing
+- `results/nvfp4_benchmark_20260826_*.json` — NVFP4 AWQ+GPTQ vs UD-Q6_K/Q8_0 throughput + DSpark single-user
 
-Single-user DSpark (UD-Q8_0, reasoning_effort=medium): 1.9x code, 3.0x math, 2.2x reasoning, 1.2x creative vs baseline ~44 t/s.
+NVFP4 baseline (llama-bench): 68.5 t/s tg, 4840 t/s pp512. Size 22.68 GB. PPL 2.97 (higher than UD-Q6_K 2.72 — GGUF dequants FP8→Q8_0, native compressed-tensors on SGLang/vLLM will be better).
+
+NVFP4 + DSpark single-user: code 109.7 t/s (1.60x), math 124.2 t/s (1.81x), reasoning 88.2 t/s (1.29x), creative 61.5 t/s (0.90x). Creative drops below baseline due to low speculative acceptance.
+
+Previous best: UD-Q8_0 + DSpark single-user: 1.9x code, 3.0x math, 2.2x reasoning, 1.2x creative vs baseline ~44 t/s.
 
 Concurrent DSpark (UD-Q6_K, 1-5 users): 1.47x per-req at 1 user (72 vs 49 t/s), 1.36x at 5 users (45 vs 33 t/s). Aggregate throughput stays above baseline at every concurrency level (178 vs 156 t/s at 5 users). MTP drops below baseline at 2+ users.
 
 ## Deployment config
 
-Default: `make serve` → UD-Q6_K, DSpark speculative decoding, 512k context, 5 parallel slots, f16 KV cache, unified KV, YaRN, vision.
+Default: `make serve QUANT=NVFP4` → NVFP4 AWQ+GPTQ, DSpark speculative decoding, 32k context, 3 parallel slots, f16 KV cache, unified KV, vision. Fallback: `make serve` → UD-Q6_K with same config.
 
 - **DSpark speculative decoding** uses `RadixArk/Qwen3.8-27B-DSpark` (1.36B params, 2.6 GB BF16 GGUF). An extension of DFlash that adds a low-rank Markov head for better draft quality. Cross-attends to target model hidden states at layers 4/16/28/40/52. Block size 7, meaning 7 draft tokens per round. Scales to concurrent users — aggregate throughput stays above baseline at 1-5 users (unlike MTP which collapses at 2+ users).
 - **DSpark acceptance varies by content type** — math/reasoning: 40-58% acceptance, 3.7-5.1 mean tokens per round. Creative writing: 13% acceptance, 1.9 mean tokens per round. The drafter excels at structured/predictable content.

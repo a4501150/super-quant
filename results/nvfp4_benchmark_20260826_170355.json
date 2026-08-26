@@ -1,0 +1,22 @@
+{
+  "date": "2026-08-26",
+  "model": "Qwen3.8-27B-AEON-NVFP4",
+  "quantization": "AWQ+GPTQ NVFP4/FP8 mixed-precision",
+  "gpu": "NVIDIA RTX PRO 6000 Blackwell 96GB",
+  "server": "llama.cpp",
+  "llama_bench": {
+    "nvfp4": {"size_gb": 22.68, "pp512_tps": 4840.1, "tg128_tps": 68.5, "ppl": 2.97},
+    "ud_q6_k": {"size_gb": 30.57, "pp512_tps": 3692.0, "tg128_tps": 50.8, "ppl": 2.72},
+    "ud_q8_0": {"size_gb": 34.74, "pp512_tps": 3896.0, "tg128_tps": 41.1, "ppl": 2.70}
+  },
+  "dspark_single_user": {
+    "spec_type": "draft-dspark",
+    "draft_model": "Qwen3.8-27B-DSpark-BF16.gguf",
+    "draft_n_max": 7,
+    "code": {"avg_tps": 109.7, "speedup_vs_baseline": 1.60},
+    "math": {"avg_tps": 124.2, "speedup_vs_baseline": 1.81},
+    "reasoning": {"avg_tps": 88.2, "speedup_vs_baseline": 1.29},
+    "creative": {"avg_tps": 61.5, "speedup_vs_baseline": 0.90}
+  },
+  "notes": "NVFP4 baseline 68.5 t/s. DSpark hurts creative (low acceptance). GGUF converts FP8 layers to Q8_0 via --fp8-as-q8; native compressed-tensors on SGLang/vLLM may show better quality."
+}
