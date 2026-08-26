@@ -1,4 +1,4 @@
-.PHONY: all setup download convert calibrate recalibrate imatrix sensitivity quantize benchmark bench-spec compare serve clean help
+.PHONY: all setup download convert calibrate recalibrate imatrix sensitivity quantize quantize-nvfp4 convert-nvfp4 benchmark bench-spec bench-concurrent bench-kv bench-sglang compare serve serve-sglang stop-sglang serve-vllm stop-vllm clean help
 
 SHELL := /bin/bash
 PROJECT_DIR := $(shell pwd)
@@ -15,6 +15,7 @@ LLAMA_PERPLEXITY := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && 
 LLAMA_QUANTIZE := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$LLAMA_QUANTIZE')
 GGUF_ARCH_KEY := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$GGUF_ARCH_KEY')
 LLAMACPP_DIR := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$LLAMACPP_DIR')
+MODELS_DIR := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$MODELS_DIR')
 
 help:
 	@echo "Super-Quant: Advanced GGUF Quantization Pipeline"
@@ -32,6 +33,11 @@ help:
 	@echo "  make benchmark    Run perplexity + throughput benchmarks"
 	@echo "  make compare      Print comparison table"
 	@echo "  make serve        Launch llama-server (DSpark/MTP/none)"
+	@echo "  make quantize-nvfp4  AWQ+GPTQ NVFP4 quantization (llm-compressor)"
+	@echo "  make convert-nvfp4   Convert NVFP4 checkpoint to GGUF"
+	@echo "  make serve-sglang    Launch SGLang server (DFlash2, FP8 KV)"
+	@echo "  make stop-sglang     Stop SGLang server"
+	@echo "  make bench-sglang    Benchmark SGLang throughput"
 	@echo ""
 	@echo "Serving options:"
 	@echo "  make serve                                          # Q6_K, DSpark, 5 slots"
@@ -80,6 +86,22 @@ sensitivity:
 quantize:
 	@$(UV) bash $(SCRIPTS)/04_quantize.sh
 
+quantize-nvfp4:
+	@$(UV) python3 $(SRC)/quantize_nvfp4.py \
+		--model-id $(MODEL_ID) \
+		--calibration-dir $(PROJECT_DIR)/calibration \
+		--output-dir $(HOME)/models/nvfp4/$(MODEL_NAME)-NVFP4
+
+NVFP4_CHECKPOINT := $(HOME)/models/nvfp4/$(MODEL_NAME)-NVFP4
+NVFP4_GGUF := $(MODELS_DIR)/$(MODEL_NAME)-NVFP4.gguf
+CONVERT_SCRIPT := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$CONVERT_SCRIPT')
+
+convert-nvfp4:
+	@$(UV) python3 $(CONVERT_SCRIPT) $(NVFP4_CHECKPOINT) \
+		--outfile $(NVFP4_GGUF) \
+		--outtype auto \
+		--fp8-as-q8
+
 benchmark:
 	@$(UV) bash $(SCRIPTS)/05_benchmark.sh
 
@@ -98,10 +120,25 @@ compare-md:
 QUANT     ?= UD-Q6_K
 CTX       ?= 524288
 PORT      ?= 8000
-PARALLEL  ?= 5
+PARALLEL  ?= 3
 SPEC_TYPE ?= dspark
 serve:
 	@SPEC_TYPE=$(SPEC_TYPE) $(UV) bash $(SCRIPTS)/06_serve.sh $(QUANT) $(CTX) $(PORT) $(PARALLEL) $(KV_TYPE_K) $(KV_TYPE_V)
+
+serve-sglang:
+	@$(UV) bash $(SCRIPTS)/serve_sglang.sh
+
+stop-sglang:
+	@bash $(SCRIPTS)/stop_sglang.sh
+
+serve-vllm:
+	@bash $(SCRIPTS)/serve_vllm.sh
+
+stop-vllm:
+	@bash $(SCRIPTS)/stop_sglang.sh
+
+bench-sglang:
+	@$(UV) bash $(SCRIPTS)/11_bench_sglang.sh
 
 MODELS_DIR := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$MODELS_DIR')
 

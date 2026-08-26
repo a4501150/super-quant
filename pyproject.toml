@@ -19,6 +19,9 @@ dependencies = [
 dev = [
     "ruff>=0.6.0",
 ]
+quantize = [
+    "llmcompressor @ git+https://github.com/vllm-project/llm-compressor.git@ab1ba3effcafc15746cd6d6ca24cba3f7bd7a582",
+]
 
 
 [[tool.uv.index]]

@@ -1,10 +1,10 @@
 # super-quant
 
-Multi-model GGUF quantization pipeline deployed via llama.cpp on RTX PRO 6000 Blackwell (96GB VRAM). Currently targeting Qwen3.8-27B.
+Multi-model GGUF quantization pipeline deployed via llama.cpp on RTX PRO 6000 Blackwell (96GB VRAM). Currently targeting Qwen3.8-27B. Dual-stack serving: llama.cpp (primary/fallback) + SGLang/vLLM (NVFP4, pending 96GB RAM upgrade).
 
 ## Gotchas
 
-- **CUDA 12.8 toolkit is pinned system-wide** — `make setup` auto-installs it to `/usr/local/cuda-12.8` and appends to `~/.bashrc`. The driver (596.36, reports "CUDA 13.2") stays untouched — driver and toolkit are separate things. CUDA 13.x toolkits have multiple bugs on Blackwell: 13.0-13.1 segfault MMQ kernels, 13.2 miscompiles IQ dequant kernels. CUDA 12.8 is NVIDIA's official recommendation for sm_120. See: https://forums.developer.nvidia.com/t/321330
+- **CUDA 12.9 toolkit is pinned system-wide** — installed at `/usr/local/cuda-12.9`, set in `~/.bashrc`. Upgraded from 12.8 because FlashInfer JIT needs CUDA 12.9+ to compile for sm_120f (Blackwell). CUDA 12.8 also works for llama.cpp (no JIT). CUDA 13.x toolkits have multiple bugs on Blackwell: 13.0-13.1 segfault MMQ kernels, 13.2 miscompiles IQ dequant kernels. Both 12.8 and 12.9 are installed side by side.
 - **Qwen3.x chat template is whitespace-sensitive** — `'{"enable_thinking":true}'` works, `'{"enable_thinking": true}'` silently fails (space after colon breaks it). Upstream llama.cpp now handles this via `--reasoning on` and `--reasoning-preserve` flags instead of `--chat-template-kwargs`.
 - **MTP GGUFs are different from standard GGUFs** — MTP tensors (draft head weights) must be included at convert time. `convert_hf_to_gguf.py` from llama.cpp b9180+ includes them by default. Standard GGUFs without MTP tensors cannot use `--spec-type draft-mtp`.
 - **`--spec-type mtp` was renamed to `--spec-type draft-mtp`** in llama.cpp around May 2026. Build b9375+ uses the new name.
@@ -22,7 +22,13 @@ Multi-model GGUF quantization pipeline deployed via llama.cpp on RTX PRO 6000 Bl
 - **Switching models**: change `MODEL_DIR` in `configs/model.env`, create `configs/<model>/model.env` with model-specific settings (MODEL_ID, NATIVE_CTX, GGUF_ARCH_KEY, quant types, DSpark drafter path), then run `make sensitivity` to generate tensor overrides.
 - **Downloaded models use HF cache** — `01_download_model.sh` stores weights in `~/.cache/huggingface/hub/`, not in the project. Other tools can reuse them.
 - **Generated GGUFs live in `~/models/gguf/`** (override with `SUPER_QUANT_MODELS` env var). Shared across projects, not in the repo.
+- **NVFP4 in llama.cpp works but FP8 KV calibration does not** — our build has Blackwell-native FP4 tensor-core MMQ kernels (`GGML_TYPE_NVFP4`, sm_120); convert `unsloth/Qwen3.8-27B-NVFP4` via `convert_hf_to_gguf.py --fp8-as-q8` (repacks E2M1 nibbles bit-exact, dequants FP8 layers to Q8_0; unsloth checkpoint needs three patches to the convert script). Unsloth's `kv_cache_scheme` FP8 calibration is vLLM-only — llama.cpp KV cache types are f32/f16/bf16/q8_0/q4_0/q4_1/iq4_nl/q5_0/q5_1, no fp8. TurboQuant (3-bit calibrated KV, ICLR 2026) is in PR #21089 but not merged upstream.
 
+- **NVFP4 AWQ+GPTQ pipeline** (`src/quantize_nvfp4.py`) uses llm-compressor (vLLM project). Combines AWQ pre-scaling + GPTQ optimal rounding + NVFP4 for MLP layers 0-55 + FP8 for attention/GDN/MLP 56-63 + FP8 KV cache calibration. Uses our multi-domain calibration data. llm-compressor needs a specific commit (`ab1ba3ef`) for Qwen3.8 tracing support. Installed via separate `quantize` extra in pyproject.toml — can't coexist with SGLang in the same venv (transformers version conflict).
+- **NVFP4 save_pretrained needs small shards** — `max_shard_size="4GB"` is required. Default 50 GB shards OOM-kill WSL during save (32 GB RAM). The model lives on GPU but `save_pretrained` materializes each shard in CPU RAM before writing.
+- **SGLang/vLLM need 64+ GB system RAM on Blackwell** — FlashInfer JIT compiles CUDA kernels via `cicc` at startup, each process uses 2+ GB RAM. Combined with model loading (safetensors mmap through page cache) and torch.compile, 32 GB RAM is not enough. Swap doesn't help — causes thrashing that freezes WSL. Wait for 96 GB RAM upgrade. llama.cpp works fine because all kernels are AOT-compiled at build time.
+- **SGLang/vLLM live in separate venvs** — SGLang at `~/.venvs/sglang/` (built from `~/src/sglang` git source), vLLM at `~/.venvs/vllm/` (pip). Both conflict with the project's llm-compressor deps. Serve scripts manage their own venvs.
+- **NVFP4 checkpoint needs processor config** — `quantize_nvfp4.py` saves only tokenizer files. Copy `preprocessor_config.json` from the source model's HF cache to the checkpoint dir, or SGLang/vLLM will fail to load the processor.
 ## Architecture decisions
 
 - **DI-MATRIX**: separate imatrices per domain (general/code/reasoning/agentic) merged with weighted blend, rather than a single imatrix from combined data. Both are generated — benchmark to determine which is better for this model.

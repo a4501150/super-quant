@@ -6,9 +6,9 @@ source "${SCRIPT_DIR}/../configs/model.env"
 
 # Parse arguments
 QUANT="${1:-UD-Q6_K}"
-CTX="${2:-524288}"
-PORT="${3:-8080}"
-PARALLEL="${4:-5}"
+CTX="${2:-${NATIVE_CTX}}"
+PORT="${3:-8000}"
+PARALLEL="${4:-3}"
 KV_TYPE_K="${5:-}"
 KV_TYPE_V="${6:-}"
 
@@ -50,6 +50,8 @@ ARGS=(
     --metrics
     --alias "${MODEL_ALIAS:-${MODEL_NAME}}"
     --jinja
+    --reasoning-format deepseek
+    --reasoning-preserve
 )
 
 # Custom chat template (per-model, optional)
