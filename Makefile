@@ -1,4 +1,4 @@
-.PHONY: all setup download convert calibrate recalibrate imatrix sensitivity quantize quantize-nvfp4 convert-nvfp4 benchmark bench-spec bench-concurrent bench-kv bench-sglang compare serve serve-sglang stop-sglang serve-vllm stop-vllm clean help
+.PHONY: all setup download convert calibrate recalibrate imatrix sensitivity quantize quantize-nvfp4 convert-nvfp4 benchmark bench-spec bench-concurrent bench-kv bench-sglang compare serve serve-sglang stop-sglang serve-vllm stop-vllm awq-prescale awq-convert awq-imatrix awq-sensitivity awq-quantize awq-all clean help
 
 SHELL := /bin/bash
 PROJECT_DIR := $(shell pwd)
@@ -17,6 +17,17 @@ GGUF_ARCH_KEY := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && ech
 LLAMACPP_DIR := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$LLAMACPP_DIR')
 MODELS_DIR := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$MODELS_DIR')
 NATIVE_CTX := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$NATIVE_CTX')
+AWQ_CHECKPOINT := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$AWQ_CHECKPOINT')
+AWQ_F16_GGUF := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$AWQ_F16_GGUF')
+AWQ_CALIBRATION_DIR := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$AWQ_CALIBRATION_DIR')
+AWQ_IMATRIX_MERGED := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$AWQ_IMATRIX_MERGED')
+AWQ_TENSOR_OVERRIDES := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$AWQ_TENSOR_OVERRIDES')
+AWQ_SENSITIVITY := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$AWQ_SENSITIVITY')
+CALIBRATION_DIR := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$CALIBRATION_DIR')
+CALIBRATION_DOMAINS := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$CALIBRATION_DOMAINS')
+IMATRIX_WEIGHTS := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$IMATRIX_WEIGHTS')
+IMATRIX_CONTEXT_SIZE := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$IMATRIX_CONTEXT_SIZE')
+QUANT_TYPES_VAR := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$QUANT_TYPES')
 
 help:
 	@echo "Super-Quant: Advanced GGUF Quantization Pipeline"
@@ -39,6 +50,14 @@ help:
 	@echo "  make serve-sglang    Launch SGLang server (DFlash2, FP8 KV)"
 	@echo "  make stop-sglang     Stop SGLang server"
 	@echo "  make bench-sglang    Benchmark SGLang throughput"
+	@echo ""
+	@echo "AWQ pre-scaled pipeline:"
+	@echo "  make awq-all         Full AWQ pipeline (prescale -> convert -> imatrix -> sensitivity -> quantize)"
+	@echo "  make awq-prescale    AWQ channel pre-scaling (saves BF16 checkpoint)"
+	@echo "  make awq-convert     Convert AWQ checkpoint to F16 GGUF"
+	@echo "  make awq-imatrix     Generate imatrix from AWQ-scaled model"
+	@echo "  make awq-sensitivity Per-tensor sensitivity on AWQ-scaled model"
+	@echo "  make awq-quantize    Quantize AWQ F16 GGUF with AWQ imatrix + overrides"
 	@echo ""
 	@echo "Serving options:"
 	@echo "  make serve                                          # Q6_K, DSpark, 5 slots"
@@ -140,6 +159,68 @@ stop-vllm:
 
 bench-sglang:
 	@$(UV) bash $(SCRIPTS)/11_bench_sglang.sh
+
+# --- AWQ pre-scaled pipeline ---
+awq-prescale:
+	@$(UV) python3 $(SRC)/awq_prescale.py \
+		--model-id $(MODEL_ID) \
+		--calibration-dir $(PROJECT_DIR)/calibration \
+		--output-dir $(AWQ_CHECKPOINT)
+
+awq-convert:
+	@$(UV) python3 $(CONVERT_SCRIPT) $(AWQ_CHECKPOINT) \
+		--outfile $(AWQ_F16_GGUF) \
+		--outtype f16
+
+awq-imatrix:
+	@mkdir -p $(AWQ_CALIBRATION_DIR)
+	@$(UV) python3 $(SRC)/generate_imatrix.py \
+		--model-id $(AWQ_CHECKPOINT) \
+		--calibration-dir $(CALIBRATION_DIR) \
+		--domains $(CALIBRATION_DOMAINS) \
+		--output-dir $(AWQ_CALIBRATION_DIR) \
+		--gguf-arch-key $(GGUF_ARCH_KEY) \
+		--llamacpp-dir $(LLAMACPP_DIR) \
+		--context-size $(IMATRIX_CONTEXT_SIZE) \
+		--dtype bfloat16 \
+		--force
+	@$(UV) python3 $(SRC)/merge_imatrix.py \
+		$(foreach d,$(CALIBRATION_DOMAINS),$(AWQ_CALIBRATION_DIR)/imatrix_$(d).dat) \
+		--weights $(IMATRIX_WEIGHTS) \
+		-o $(AWQ_IMATRIX_MERGED)
+
+awq-sensitivity:
+	@$(UV) python3 $(SRC)/sensitivity_analysis.py \
+		--model-id $(AWQ_CHECKPOINT) \
+		--test-file $(CALIBRATION_DIR)/combined.txt \
+		--gguf-arch-key $(GGUF_ARCH_KEY) \
+		--llamacpp-dir $(LLAMACPP_DIR) \
+		--output-json $(AWQ_SENSITIVITY)
+	@$(UV) python3 $(SRC)/generate_hybrid_overrides.py \
+		--model $(AWQ_F16_GGUF) \
+		--sensitivity $(AWQ_SENSITIVITY) \
+		--output $(AWQ_TENSOR_OVERRIDES)
+
+awq-quantize:
+	@bash -c '\
+		source $(PROJECT_DIR)/configs/model.env && \
+		IMATRIX="$(AWQ_IMATRIX_MERGED)" && \
+		OVERRIDES_CLEAN=$$(mktemp) && \
+		grep -v "^\s*#" "$(AWQ_TENSOR_OVERRIDES)" | grep -v "^\s*$$" > "$$OVERRIDES_CLEAN" && \
+		for TYPE in $(QUANT_TYPES_VAR); do \
+			OUTPUT="$(MODELS_DIR)/$(MODEL_NAME)-AWQ-UD-$$TYPE.gguf" && \
+			if [ -f "$$OUTPUT" ]; then echo "Skipping AWQ-UD-$$TYPE -- already exists"; continue; fi && \
+			echo "--- AWQ-UD-$$TYPE ---" && \
+			$(LLAMA_QUANTIZE) \
+				--imatrix "$$IMATRIX" \
+				--tensor-type-file "$$OVERRIDES_CLEAN" \
+				"$(AWQ_F16_GGUF)" "$$OUTPUT" "$$TYPE" && \
+			echo "  -> $$OUTPUT ($$(du -sh "$$OUTPUT" | cut -f1))" ; \
+		done && \
+		rm -f "$$OVERRIDES_CLEAN" \
+	'
+
+awq-all: awq-prescale awq-convert awq-imatrix awq-sensitivity awq-quantize
 
 MODELS_DIR := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$MODELS_DIR')
 

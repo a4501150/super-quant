@@ -13,6 +13,8 @@ Built for llama.cpp on NVIDIA RTX PRO 6000 Blackwell (96 GB VRAM). Currently tar
 
 ## Pipeline
 
+### Baseline (UD)
+
 ```
 make all
 ```
@@ -20,14 +22,32 @@ make all
 Runs the full pipeline: download, convert, calibrate, imatrix, sensitivity, quantize, benchmark.
 
 ```
-download  → HF model weights to local cache
-convert   → F16 GGUF (with MTP tensors) + mmproj GGUF (vision encoder)
-calibrate → Multi-domain calibration data from 13 HF datasets
-imatrix   → GPU-native importance matrix generation (PyTorch, 65k context)
+download   → HF model weights to local cache
+convert    → F16 GGUF (with MTP tensors) + mmproj GGUF (vision encoder)
+calibrate  → Multi-domain calibration data from 13 HF datasets
+imatrix    → GPU-native importance matrix generation (PyTorch, 65k context)
 sensitivity → GPU-native per-tensor KL divergence probing
-quantize  → UD quants with 685 per-tensor overrides + imatrix
-benchmark → Throughput + perplexity + KL divergence vs F16
+quantize   → UD quants with 685 per-tensor overrides + imatrix
+benchmark  → Throughput + perplexity + KL divergence vs F16
 ```
+
+### AWQ Pre-Scaled (AWQ-UD)
+
+```
+make awq-all
+```
+
+Runs the AWQ pre-scaling pipeline, then the full GGUF pipeline on the AWQ-scaled weights:
+
+```
+awq-prescale  → AWQ channel scaling on BF16 model (lossless, saves plain BF16 checkpoint)
+awq-convert   → AWQ-scaled BF16 → F16 GGUF
+awq-imatrix   → Regenerate imatrix from AWQ-scaled model
+awq-sensitivity → Regenerate sensitivity from AWQ-scaled model
+awq-quantize  → UD quants from AWQ F16 GGUF + AWQ imatrix + AWQ overrides
+```
+
+AWQ (Activation-Aware Weight Quantization) redistributes weight magnitudes per channel to reduce outlier sensitivity during quantization. The transformation is lossless at BF16. Combined with K-quant block quantization, imatrix importance weighting, and UD per-tensor overrides, this produces better reasoning coherence than NVFP4 AWQ+GPTQ at similar bit widths.
 
 Each step can run independently via `make <step>`.
 
@@ -52,6 +72,10 @@ Calibrated on 4 domains (general, code, reasoning, agentic) from 13 HF datasets 
 ### Per-Tensor Overrides
 
 685 explicit overrides per model. Every non-FFN tensor has an assigned precision based on measured sensitivity. No dependence on llama-quantize's internal promotion rules.
+
+### AWQ Channel Pre-Scaling
+
+AWQ redistributes weight magnitudes across input channels before quantization. Outlier channels that dominate a quantization block's range are scaled down, with compensating scales absorbed into adjacent LayerNorm parameters. The BF16 model is functionally identical, but quantizes with less error. The AWQ-UD pipeline applies this pre-scaling, then runs the full GGUF pipeline (imatrix, sensitivity, quantize) on the transformed weights.
 
 ## Switching Models
 
@@ -82,6 +106,8 @@ configs/
   Qwen3.8-27B-AEON/model.env     # Model-specific config
   Qwen3.8-27B-AEON/tensor_overrides.txt  # 685 per-tensor overrides
 src/
+  awq_prescale.py                # AWQ-only channel pre-scaling (saves BF16)
+  quantize_nvfp4.py              # AWQ+GPTQ NVFP4 quantization
   generate_imatrix.py            # GPU-native imatrix generator (PyTorch)
   sensitivity_analysis.py        # GPU-native per-tensor KL probing
   generate_hybrid_overrides.py   # Sensitivity → tensor override file
@@ -102,7 +128,7 @@ scripts/
 ## Requirements
 
 - NVIDIA GPU with 48+ GB VRAM (96 GB recommended for 27B models at 65k context)
-- CUDA 12.8 toolkit
+- CUDA 12.9 toolkit (12.8 also works for llama.cpp)
 - Python 3.12+ via uv
 - llama.cpp (built by `make setup`)
 
