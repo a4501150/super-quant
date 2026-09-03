@@ -26,8 +26,8 @@ from llmcompressor.modifiers.quantization import QuantizationModifier
 from llmcompressor.modifiers.transform.awq import AWQModifier
 from llmcompressor.utils import load_context
 
-NUM_CALIBRATION_SAMPLES = 1024
-MAX_SEQUENCE_LENGTH = 1024
+NUM_CALIBRATION_SAMPLES = 256
+MAX_SEQUENCE_LENGTH = 512
 SHARD_SIZE = "4GB"
 
 LINEAR_TARGETS = [
