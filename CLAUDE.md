@@ -55,7 +55,7 @@ Concurrent DSpark (UD-Q6_K, 1-5 users): 1.47x per-req at 1 user (72 vs 49 t/s), 
 
 ## Deployment config
 
-Default: `make serve QUANT=NVFP4` → NVFP4 AWQ+GPTQ, DSpark speculative decoding, 32k context, 3 parallel slots, f16 KV cache, unified KV, vision. Fallback: `make serve` → UD-Q6_K with same config.
+Default: `make serve QUANT=NVFP4` → NVFP4 AWQ+GPTQ, DSpark speculative decoding, native context (256K), 3 parallel slots, f16 KV cache, unified KV, vision. Fallback: `make serve` → UD-Q6_K with same config. CTX defaults to NATIVE_CTX from model.env.
 
 - **DSpark speculative decoding** uses `RadixArk/Qwen3.8-27B-DSpark` (1.36B params, 2.6 GB BF16 GGUF). An extension of DFlash that adds a low-rank Markov head for better draft quality. Cross-attends to target model hidden states at layers 4/16/28/40/52. Block size 7, meaning 7 draft tokens per round. Scales to concurrent users — aggregate throughput stays above baseline at 1-5 users (unlike MTP which collapses at 2+ users).
 - **DSpark acceptance varies by content type** — math/reasoning: 40-58% acceptance, 3.7-5.1 mean tokens per round. Creative writing: 13% acceptance, 1.9 mean tokens per round. The drafter excels at structured/predictable content.

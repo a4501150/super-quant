@@ -16,6 +16,7 @@ LLAMA_QUANTIZE := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && ec
 GGUF_ARCH_KEY := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$GGUF_ARCH_KEY')
 LLAMACPP_DIR := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$LLAMACPP_DIR')
 MODELS_DIR := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$MODELS_DIR')
+NATIVE_CTX := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$NATIVE_CTX')
 
 help:
 	@echo "Super-Quant: Advanced GGUF Quantization Pipeline"
@@ -118,7 +119,7 @@ compare-md:
 	@$(UV) python3 $(SRC)/compare_results.py --results-dir $(PROJECT_DIR)/results --model-name $(MODEL_NAME) --markdown
 
 QUANT     ?= UD-Q6_K
-CTX       ?= 524288
+CTX       ?= $(NATIVE_CTX)
 PORT      ?= 8000
 PARALLEL  ?= 3
 SPEC_TYPE ?= dspark

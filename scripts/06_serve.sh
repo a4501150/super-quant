@@ -43,7 +43,8 @@ ARGS=(
     -c "${CTX}"
     --parallel "${PARALLEL}"
     -kvu
-    --cache-ram -1
+    --cache-ram 0
+    --slot-save-path "${MODELS_DIR}/cache"
     --host 0.0.0.0
     --port "${PORT}"
     --threads "${THREADS}"
