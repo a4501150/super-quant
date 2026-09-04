@@ -1,0 +1,46 @@
+{
+  "server": "sglang",
+  "model": "qwen3.8-27b",
+  "gpu": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+  "single_user": [
+    {
+      "prompt_idx": 0,
+      "avg_tps": 150.5,
+      "runs": [
+        150.5
+      ]
+    },
+    {
+      "prompt_idx": 1,
+      "avg_tps": 177.6,
+      "runs": [
+        177.6
+      ]
+    },
+    {
+      "prompt_idx": 2,
+      "avg_tps": 146.0,
+      "runs": [
+        146.0
+      ]
+    }
+  ],
+  "concurrent": [
+    {
+      "concurrency": 3,
+      "completed": 3,
+      "total_tokens": 20795,
+      "wall_seconds": 53.135,
+      "aggregate_tps": 391.4,
+      "per_request_tps": 130.5
+    },
+    {
+      "concurrency": 6,
+      "completed": 6,
+      "total_tokens": 42243,
+      "wall_seconds": 85.636,
+      "aggregate_tps": 493.3,
+      "per_request_tps": 82.2
+    }
+  ]
+}

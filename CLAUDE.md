@@ -96,15 +96,15 @@ Throughput (identical between AWQ-UD and baseline UD at same bit width — AWQ d
 SGLang serving NVFP4 checkpoint with DFlash2 speculative decoding (8 draft tokens), FP8 E4M3 KV cache, reasoning enabled (medium effort). Compared to llama.cpp NVFP4 baseline (64.1 t/s).
 
 Single-user throughput:
-- Code (red-black tree): 172.6 t/s (2.69x llama.cpp)
-- Math (integral): 183.9 t/s (2.87x)
-- Code (Rust web server): 152.8 t/s (2.38x)
+- Code (red-black tree): 150.5 t/s (2.35x llama.cpp)
+- Math (integral): 177.6 t/s (2.77x)
+- Code (Rust web server): 146.0 t/s (2.28x)
 
 Concurrent throughput:
-- 3 users: 434.5 agg t/s, 144.8 per-req t/s
-- 6 users: 446.0 agg t/s, 74.3 per-req t/s
+- 3 users: 391.4 agg t/s, 130.5 per-req t/s
+- 6 users: 493.3 agg t/s, 82.2 per-req t/s
 
-SGLang is 2.4-2.9x faster single-user than llama.cpp NVFP4. Concurrent aggregate throughput scales to 446 t/s at 6 users (vs llama.cpp UD-Q6_K+DSpark 178 t/s at 5 users).
+SGLang is 2.3-2.8x faster single-user than llama.cpp NVFP4. Concurrent aggregate throughput scales to 493 t/s at 6 users (vs llama.cpp UD-Q6_K+DSpark 178 t/s at 5 users).
 ## Deployment config
 
 Default: `make serve` → AWQ-UD-Q6_K, DSpark speculative decoding, native context (256K), 3 parallel slots, f16 KV cache, unified KV, vision. `make serve QUANT=AWQ-UD-Q6_K` for AWQ pre-scaled GGUF. CTX defaults to NATIVE_CTX from model.env.
