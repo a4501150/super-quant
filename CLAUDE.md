@@ -1,6 +1,6 @@
 # super-quant
 
-Multi-model GGUF quantization pipeline deployed via llama.cpp on RTX PRO 6000 Blackwell (96GB VRAM). Currently targeting Qwen3.8-27B. Dual-stack serving: llama.cpp (primary/fallback) + SGLang/vLLM (NVFP4, pending 96GB RAM upgrade).
+Multi-model GGUF quantization pipeline deployed via llama.cpp on RTX PRO 6000 Blackwell (96GB VRAM). Currently targeting Qwen3.8-27B. Dual-stack serving: llama.cpp (primary/fallback) + SGLang (NVFP4/Flash Next).
 
 ## Gotchas
 
@@ -26,7 +26,7 @@ Multi-model GGUF quantization pipeline deployed via llama.cpp on RTX PRO 6000 Bl
 
 - **NVFP4 AWQ+GPTQ pipeline** (`src/quantize_nvfp4.py`) uses llm-compressor (vLLM project). Combines AWQ pre-scaling + GPTQ optimal rounding + NVFP4 for MLP layers 0-55 + FP8 for attention/GDN/MLP 56-63 + FP8 KV cache calibration. Uses our multi-domain calibration data. llm-compressor needs a specific commit (`ab1ba3ef`) for Qwen3.8 tracing support. Installed via separate `quantize` extra in pyproject.toml — can't coexist with SGLang in the same venv (transformers version conflict).
 - **NVFP4 save_pretrained needs small shards** — `max_shard_size="4GB"` is required. Default 50 GB shards OOM-kill WSL during save (32 GB RAM). The model lives on GPU but `save_pretrained` materializes each shard in CPU RAM before writing.
-- **SGLang/vLLM need 64+ GB system RAM on Blackwell** — FlashInfer JIT compiles CUDA kernels via `cicc` at startup, each process uses 2+ GB RAM. Combined with model loading (safetensors mmap through page cache) and torch.compile, 32 GB RAM is not enough. Swap doesn't help — causes thrashing that freezes WSL. Wait for 96 GB RAM upgrade. llama.cpp works fine because all kernels are AOT-compiled at build time.
+- **SGLang/vLLM need 64+ GB system RAM on Blackwell** — FlashInfer JIT compiles CUDA kernels via `cicc` at startup, each process uses 2+ GB RAM. Combined with model loading (safetensors mmap through page cache) and torch.compile, 32 GB RAM is not enough. Swap doesn't help — causes thrashing that freezes WSL. llama.cpp works fine because all kernels are AOT-compiled at build time.
 - **SGLang/vLLM live in separate venvs** — SGLang at `~/.venvs/sglang/` (built from `~/src/sglang` git source), vLLM at `~/.venvs/vllm/` (pip). Both conflict with the project's llm-compressor deps. Serve scripts manage their own venvs.
 - **NVFP4 checkpoint needs processor config** — `quantize_nvfp4.py` saves only tokenizer files. Copy `preprocessor_config.json` from the source model's HF cache to the checkpoint dir, or SGLang/vLLM will fail to load the processor.
 - **AWQ pre-scaling is not standalone** — `AWQModifier` needs a temporary fake quantizer (`QuantizationModifier(scheme="W4A16_ASYM")`) to evaluate candidate scales. After `oneshot()`, all quantization state must be stripped: `QuantizationMetadata.clear_quantization`, then delete `quantization_status`/`quantization_enabled` attributes and `quantization_config` from config. Without cleanup, the saved checkpoint contains fake-quantization wrappers and `save_pretrained` emits compressed-tensors metadata.
@@ -34,6 +34,7 @@ Multi-model GGUF quantization pipeline deployed via llama.cpp on RTX PRO 6000 Bl
 - **AWQ artifacts must not overwrite baseline artifacts** — AWQ-scaled imatrices, sensitivity, overrides, and GGUFs all use separate paths (`awq_` prefix or `-AWQ-` infix). The baseline pipeline remains independent. Mixing AWQ imatrix with non-AWQ weights (or vice versa) produces wrong results because AWQ changes the channel basis.
 - **AWQ dynamic mappings cover more than manual MLP-only mappings** — `AWQModifier(mappings=None)` activates llm-compressor's Qwen3.5 dynamic mappings: full-attention Q/K/V (16 layers), GDN input projections (48 layers), all 64 MLPs. The NVFP4 script's manual mappings only cover MLP paths. Dynamic mappings do not cover `v_proj→o_proj` or `gdn_norm→out_proj` — those need model-specific validation before adding.
 - **MTP layer is not AWQ-scaled** — Transformers ignores MTP tensors during model construction. llm-compressor's save wrapper copies them unchanged from the source checkpoint. The MTP layer (blk.64) stays at original BF16 precision.
+- **AWQ calibration is 256 samples x 512 tokens** — industry standard is 128 x 512. AWQ measures per-channel activation magnitudes which converge fast. More samples give diminishing returns. The downstream imatrix + sensitivity pipeline uses full calibration data (~3M tokens).
 ## Architecture decisions
 
 - **DI-MATRIX**: separate imatrices per domain (general/code/reasoning/agentic) merged with weighted blend, rather than a single imatrix from combined data. Both are generated — benchmark to determine which is better for this model.
@@ -91,7 +92,7 @@ Throughput (identical between AWQ-UD and baseline UD at same bit width — AWQ d
 
 ## Deployment config
 
-Default: `make serve` → UD-Q6_K, DSpark speculative decoding, native context (256K), 3 parallel slots, f16 KV cache, unified KV, vision. `make serve QUANT=NVFP4` for NVFP4 AWQ+GPTQ. `make serve QUANT=AWQ-UD-Q6_K` for AWQ pre-scaled GGUF. CTX defaults to NATIVE_CTX from model.env.
+Default: `make serve` → AWQ-UD-Q6_K, DSpark speculative decoding, native context (256K), 3 parallel slots, f16 KV cache, unified KV, vision. `make serve QUANT=AWQ-UD-Q6_K` for AWQ pre-scaled GGUF. CTX defaults to NATIVE_CTX from model.env.
 
 - **DSpark speculative decoding** uses `RadixArk/Qwen3.8-27B-DSpark` (1.36B params, 2.6 GB BF16 GGUF). An extension of DFlash that adds a low-rank Markov head for better draft quality. Cross-attends to target model hidden states at layers 4/16/28/40/52. Block size 7, meaning 7 draft tokens per round. Scales to concurrent users — aggregate throughput stays above baseline at 1-5 users (unlike MTP which collapses at 2+ users).
 - **DSpark acceptance varies by content type** — math/reasoning: 40-58% acceptance, 3.7-5.1 mean tokens per round. Creative writing: 13% acceptance, 1.9 mean tokens per round. The drafter excels at structured/predictable content.
@@ -153,11 +154,10 @@ The 51 GB PLE embedding table can be offloaded to NVMe SSD via mmap. Without PLE
 ```bash
 make help                                   # show all targets
 make all                                    # full baseline pipeline
-make serve                                  # UD-Q6_K, DSpark, 3 slots, f16 KV
-make serve QUANT=NVFP4                      # NVFP4 AWQ+GPTQ
-make serve QUANT=AWQ-UD-Q6_K                # AWQ pre-scaled Q6_K
+make serve                                  # AWQ-UD-Q6_K, DSpark, 3 slots, f16 KV
+make serve QUANT=AWQ-UD-Q6_K               # AWQ pre-scaled Q6_K
 make serve SPEC_TYPE=mtp                    # MTP instead of DSpark
 make serve SPEC_TYPE=none                   # no speculative decoding
-make awq-all                                # full AWQ pipeline (prescale → convert → imatrix → sensitivity → quantize)
+make awq-all                                # full AWQ pipeline (prescale -> convert -> imatrix -> sensitivity -> quantize)
 make awq-prescale                           # AWQ pre-scale only (saves BF16 checkpoint)
 ```
