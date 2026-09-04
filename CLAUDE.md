@@ -74,11 +74,50 @@ Default: `make serve` → UD-Q6_K, DSpark speculative decoding, native context (
 
 ## Paths
 
-- llama.cpp: `/home/jinyang/src/llama.cpp` (upstream `ggml-org/llama.cpp`, no fork patches)
+- llama.cpp: `/home/jinyang/src/llama.cpp` (upstream `ggml-org/llama.cpp`, fork `a4501150/llama.cpp` with NVFP4 mixed-precision convert patches stashed)
+- SGLang: `/home/jinyang/src/sglang` (upstream `sgl-project/sglang`). Branch `qwen4-ple-mmap` has Qwen4-Exp support + mmap PLE offload (cherry-picked from PR #37793).
 - Generated GGUFs: `~/models/gguf/` (override: `SUPER_QUANT_MODELS` env var)
 - Downloaded models: `~/.cache/huggingface/hub/` (standard HF cache)
 - Per-model configs: `configs/<MODEL_DIR>/` (tensor overrides, model.env)
 - GPU: NVIDIA RTX PRO 6000 Blackwell, 96GB VRAM, sm_120
+
+## Qwen3.8-Flash-Next (Qwen4-Exp)
+
+Qwen4 architecture preview: 176B MoE (512 experts, 10+1 active, 6B active/token), GatedDeltaNet + QSA sparse attention, HyperConnections, 51B PLE n-gram embedding table. NVFP4 checkpoint is ~135 GB (experts NVFP4, attention/PLE FP8, norms BF16).
+
+### PLE n-gram table SSD offload
+
+The 51 GB PLE embedding table can be offloaded to NVMe SSD via mmap. Without PLE (~84 GB), the model fits in 96 GB VRAM.
+
+**SGLang branch:** `qwen4-ple-mmap` (based on PR sgl-project/sglang#37793, stacked on `qwen4-main-squashed` PR sgl-project/sglang#36497).
+
+**Setup:**
+
+1. Prepare the PLE directory and metadata file:
+   ```bash
+   mkdir -p ~/models/ple/Qwen3.8-Flash-Next-NVFP4
+   ```
+2. Extract PLE weights from the checkpoint into a flat binary file (`ple.f8_e4m3.bin`) and write `ple.json` with `{"file": "ple.f8_e4m3.bin", "rows": <N>, "dim": <D>, "dtype": "F8_E4M3", "weight_scale": <float>}`. The weight loader writes through the mmap on first boot; the file persists for subsequent restarts.
+3. Serve with the mmap env var:
+   ```bash
+   SGLANG_QWEN4_PLE_MMAP=~/models/ple/Qwen3.8-Flash-Next-NVFP4 \
+     python -m sglang.launch_server \
+       --model-path orcarouter/Qwen3.8-Flash-Next-Uncensored-NVFP4 \
+       --trust-remote-code --port 8888
+   ```
+
+**How it works:**
+- Decode (<=64 rows): `os.pread` with 16-thread pool, GIL released. Each row is 160 B.
+- Prefill (>64 rows): `numpy.memmap` bulk gather. `POSIX_FADV_DONTNEED` drops pages after >=512-row gathers.
+- `MADV_RANDOM` prevents kernel readahead (rows are 160 B at random offsets; readahead pulls 560x the data).
+- CUDA graphs: mmap lookup wrapped with `eager_on_graph(True)` for breakable decode graphs.
+- Zero GPU VRAM, zero pinned host RAM for PLE. OS page cache handles hot rows.
+
+**Related PRs:**
+- sgl-project/sglang#37793 -- mmap PLE + CPU-offload bug fixes (discrete GPU, our branch)
+- sgl-project/sglang#37068 -- file-backed PLE with RSS trimmer + prefetcher (unified memory / DGX Spark)
+- sgl-project/sglang#37826 -- generic `--offload-embedding-to-host` for any model's embed_tokens
+- sgl-project/sglang#36497 -- base Qwen4-Exp support (qwen4-main-squashed)
 
 ## Commands
 
