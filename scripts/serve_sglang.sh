@@ -54,7 +54,7 @@ echo "Log:     $LOGFILE"
     --model-path "$MODEL_PATH" \
     --served-model-name "$SERVED_NAME" \
     --trust-remote-code \
-    --mem-fraction-static 0.75 \
+    --mem-fraction-static 0.90 \
     --attention-backend flashinfer \
     --chunked-prefill-size 4096 \
     --max-prefill-tokens 4096 \

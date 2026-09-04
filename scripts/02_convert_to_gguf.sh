@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/../configs/model.env"
 
 # Resolve HF cache snapshot path (instant if already downloaded)
-BF16_DIR=$(hf download "${MODEL_ID}" 2>/dev/null || true)
+BF16_DIR=$(hf download "${MODEL_ID}" 2>/dev/null | grep -oP '(?<=path=).*' || true)
 
 if [[ -z "${BF16_DIR}" ]] || [[ ! -f "${BF16_DIR}/config.json" ]]; then
     echo "ERROR: Model not found in HF cache: ${MODEL_ID}"
