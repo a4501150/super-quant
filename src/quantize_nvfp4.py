@@ -22,7 +22,6 @@ from pathlib import Path
 import datasets
 import torch
 from compressed_tensors.quantization.quant_scheme import (
-    FP8_DYNAMIC,
     NVFP4,
     QuantizationArgs,
     QuantizationScheme,
@@ -120,7 +119,22 @@ def build_recipe():
             r"re:.*layers\.(5[6-9]|6[0-3])"
             r"\.mlp\.(gate|up|down)_proj$",
         ],
-        **FP8_DYNAMIC,
+        weights=QuantizationArgs(
+            num_bits=8,
+            type="float",
+            symmetric=True,
+            strategy="channel",
+            dynamic=False,
+            actorder="static",
+            observer="memoryless_minmax",
+        ),
+        input_activations=QuantizationArgs(
+            num_bits=8,
+            type="float",
+            symmetric=True,
+            strategy="token",
+            dynamic=True,
+        ),
     )
 
     kv_cache_scheme = QuantizationArgs(

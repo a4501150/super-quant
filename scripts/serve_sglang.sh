@@ -55,10 +55,14 @@ echo "Log:     $LOGFILE"
     --served-model-name "$SERVED_NAME" \
     --trust-remote-code \
     --mem-fraction-static 0.90 \
-    --attention-backend flashinfer \
+    --attention-backend fa3 \
     --chunked-prefill-size 4096 \
     --max-prefill-tokens 4096 \
+    --enable-mixed-chunk \
+    --num-continuous-decode-steps 4 \
     --kv-cache-dtype fp8_e4m3 \
+    --fp4-gemm-backend flashinfer_cutedsl \
+    --cuda-graph-backend-decode breakable \
     --context-length "$CTX" \
     --max-running-requests "$MAX_REQUESTS" \
     --speculative-algorithm DFLASH \
