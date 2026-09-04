@@ -9,7 +9,7 @@ RESULTS_DIR="${PROJECT_DIR}/results"
 RESULT_FILE="${RESULTS_DIR}/sglang_benchmark_$(date +%Y%m%d_%H%M%S).json"
 SERVED_NAME="${MODEL_ALIAS:-qwen3.8-27b}"
 
-REPS=3
+REPS=1
 
 mkdir -p "${RESULTS_DIR}"
 
@@ -17,10 +17,9 @@ PROMPTS=(
     "Write a detailed Python implementation of a red-black tree with insert, delete, and search operations. Include type hints and docstrings for all methods."
     "Solve the integral of x^3 * e^(-x^2) from 0 to infinity. Show all steps."
     "Write a Rust async web server that handles /api/users CRUD with SQLite, error handling, and middleware for auth tokens."
-    "Explain the architecture of a transformer model, including multi-head attention, positional encoding, and layer normalization. Use mathematical notation."
 )
 
-CONCURRENCY_LEVELS=(1 2 4 8)
+CONCURRENCY_LEVELS=(3 6)
 
 log() { echo "$1" >&2; }
 
@@ -40,8 +39,8 @@ run_single_request() {
     "temperature": 0.6,
     "top_k": 20,
     "top_p": 0.95,
-    "presence_penalty": 0.0,
-    "repetition_penalty": 1.0,
+    "reasoning_effort": "medium",
+    "chat_template_kwargs": {"enable_thinking": true},
     "stream": false
 }
 REQEOF
@@ -90,6 +89,27 @@ single_user_bench() {
                 tps=$(python3 -c "print(f'{${tokens}/${elapsed}:.1f}')")
                 speeds+=("${tps}")
                 log "    rep ${rep}: ${tps} t/s (${tokens} tokens, ${elapsed}s)"
+                log ""
+                local tmpfile
+                tmpfile=$(mktemp)
+                echo "${response}" > "${tmpfile}"
+                python3 -c "
+import json, textwrap, sys
+with open(sys.argv[1]) as f:
+    r = json.load(f)
+c = r.get('choices', [{}])[0].get('message', {})
+thinking = c.get('reasoning_content', '')
+content = c.get('content', '')
+if thinking:
+    print('--- thinking ---')
+    print(textwrap.shorten(thinking, width=500, placeholder=' ...'))
+    print()
+if content:
+    print('--- response ---')
+    print(textwrap.shorten(content, width=1000, placeholder=' ...'))
+    print()
+" "${tmpfile}" >&2
+                rm -f "${tmpfile}"
             else
                 log "    rep ${rep}: FAILED"
             fi

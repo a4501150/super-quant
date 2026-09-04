@@ -26,7 +26,7 @@ Multi-model GGUF quantization pipeline deployed via llama.cpp on RTX PRO 6000 Bl
 
 - **NVFP4 AWQ+GPTQ pipeline** (`src/quantize_nvfp4.py`) uses llm-compressor (vLLM project). Combines AWQ pre-scaling + GPTQ optimal rounding + NVFP4 for MLP layers 0-55 + FP8 for attention/GDN/MLP 56-63 + FP8 KV cache calibration. Uses our multi-domain calibration data. llm-compressor needs a specific commit (`ab1ba3ef`) for Qwen3.8 tracing support. Installed via separate `quantize` extra in pyproject.toml — can't coexist with SGLang in the same venv (transformers version conflict).
 - **NVFP4 save_pretrained needs small shards** — `max_shard_size="4GB"` is required. Default 50 GB shards OOM-kill WSL during save (32 GB RAM). The model lives on GPU but `save_pretrained` materializes each shard in CPU RAM before writing.
-- **SGLang/vLLM need 64+ GB system RAM on Blackwell** — FlashInfer JIT compiles CUDA kernels via `cicc` at startup, each process uses 2+ GB RAM. Combined with model loading (safetensors mmap through page cache) and torch.compile, 32 GB RAM is not enough. Swap doesn't help — causes thrashing that freezes WSL. llama.cpp works fine because all kernels are AOT-compiled at build time.
+- **SGLang/vLLM need 64+ GB system RAM on Blackwell** — FlashInfer JIT compiles CUDA kernels via `cicc` at startup, each process uses 2-6 GB RAM. Combined with model loading (safetensors mmap through page cache) and torch.compile, 32 GB RAM is not enough. Fix: add 32 GB swap (`sudo fallocate -l 32G /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile`). Without swap, `cicc` OOM-kills WSL. llama.cpp works fine because all kernels are AOT-compiled at build time.
 - **SGLang/vLLM live in separate venvs** — SGLang at `~/.venvs/sglang/` (built from `~/src/sglang` git source), vLLM at `~/.venvs/vllm/` (pip). Both conflict with the project's llm-compressor deps. Serve scripts manage their own venvs.
 - **NVFP4 checkpoint needs processor config** — `quantize_nvfp4.py` saves only tokenizer files. Copy `preprocessor_config.json` from the source model's HF cache to the checkpoint dir, or SGLang/vLLM will fail to load the processor.
 - **AWQ pre-scaling is not standalone** — `AWQModifier` needs a temporary fake quantizer (`QuantizationModifier(scheme="W4A16_ASYM")`) to evaluate candidate scales. After `oneshot()`, all quantization state must be stripped: `QuantizationMetadata.clear_quantization`, then delete `quantization_status`/`quantization_enabled` attributes and `quantization_config` from config. Without cleanup, the saved checkpoint contains fake-quantization wrappers and `save_pretrained` emits compressed-tensors metadata.
@@ -54,6 +54,7 @@ Results are in `results/`. Key files:
 - `results/sensitivity.json` — per-tensor group KL divergence from Q4_0 probing
 - `results/awq_sensitivity.json` — AWQ-scaled per-tensor group KL divergence
 - `results/nvfp4_benchmark_20260826_*.json` — NVFP4 AWQ+GPTQ vs UD-Q6_K/Q8_0 throughput + DSpark single-user
+- `results/sglang_benchmark_20260904_*.json` — SGLang NVFP4 + DFlash2 throughput (single-user + concurrent)
 
 NVFP4 baseline (llama-bench): 68.5 t/s tg, 4840 t/s pp512. Size 22.68 GB. PPL 2.97 (higher than UD-Q6_K 2.72 — GGUF dequants FP8→Q8_0, native compressed-tensors on SGLang/vLLM will be better).
 
@@ -90,6 +91,20 @@ Throughput (identical between AWQ-UD and baseline UD at same bit width — AWQ d
 - F16 (50.9 GB): 2421 pp, 30.3 tg
 - NVFP4 (22.7 GB): 4719 pp, 64.1 tg
 
+### SGLang NVFP4 + DFlash2 (2026-09-04)
+
+SGLang serving NVFP4 checkpoint with DFlash2 speculative decoding (8 draft tokens), FP8 E4M3 KV cache, reasoning enabled (medium effort). Compared to llama.cpp NVFP4 baseline (64.1 t/s).
+
+Single-user throughput:
+- Code (red-black tree): 172.6 t/s (2.69x llama.cpp)
+- Math (integral): 183.9 t/s (2.87x)
+- Code (Rust web server): 152.8 t/s (2.38x)
+
+Concurrent throughput:
+- 3 users: 434.5 agg t/s, 144.8 per-req t/s
+- 6 users: 446.0 agg t/s, 74.3 per-req t/s
+
+SGLang is 2.4-2.9x faster single-user than llama.cpp NVFP4. Concurrent aggregate throughput scales to 446 t/s at 6 users (vs llama.cpp UD-Q6_K+DSpark 178 t/s at 5 users).
 ## Deployment config
 
 Default: `make serve` → AWQ-UD-Q6_K, DSpark speculative decoding, native context (256K), 3 parallel slots, f16 KV cache, unified KV, vision. `make serve QUANT=AWQ-UD-Q6_K` for AWQ pre-scaled GGUF. CTX defaults to NATIVE_CTX from model.env.
