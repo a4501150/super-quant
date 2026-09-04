@@ -134,7 +134,6 @@ def build_recipe():
     return [
         AWQModifier(
             mappings=awq_mappings,
-            offload_device=torch.device("cpu"),
             duo_scaling=True,
             n_grid=20,
         ),
