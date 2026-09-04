@@ -47,9 +47,11 @@ Multi-model GGUF quantization pipeline deployed via llama.cpp on RTX PRO 6000 Bl
 
 Results are in `results/`. Key files:
 - `results/benchmark_2026-08-17_001719.json` — Qwen3.8-27B-AEON quant comparison (PPL/KL/throughput)
+- `results/benchmark_2026-09-03_224336.json` — AWQ-UD vs baseline UD full comparison (PPL/KL/throughput)
 - `results/dspark_benchmark_20260817.json` — DSpark vs MTP vs baseline single-user speculative decoding
 - `results/concurrent_benchmark_20260817_025314.tsv` — DSpark vs baseline concurrent throughput (1-5 users)
 - `results/sensitivity.json` — per-tensor group KL divergence from Q4_0 probing
+- `results/awq_sensitivity.json` — AWQ-scaled per-tensor group KL divergence
 - `results/nvfp4_benchmark_20260826_*.json` — NVFP4 AWQ+GPTQ vs UD-Q6_K/Q8_0 throughput + DSpark single-user
 
 NVFP4 baseline (llama-bench): 68.5 t/s tg, 4840 t/s pp512. Size 22.68 GB. PPL 2.97 (higher than UD-Q6_K 2.72 — GGUF dequants FP8→Q8_0, native compressed-tensors on SGLang/vLLM will be better).
@@ -59,6 +61,33 @@ NVFP4 + DSpark single-user: code 109.7 t/s (1.60x), math 124.2 t/s (1.81x), reas
 Previous best: UD-Q8_0 + DSpark single-user: 1.9x code, 3.0x math, 2.2x reasoning, 1.2x creative vs baseline ~44 t/s.
 
 Concurrent DSpark (UD-Q6_K, 1-5 users): 1.47x per-req at 1 user (72 vs 49 t/s), 1.36x at 5 users (45 vs 33 t/s). Aggregate throughput stays above baseline at every concurrency level (178 vs 156 t/s at 5 users). MTP drops below baseline at 2+ users.
+
+### AWQ-UD vs baseline UD (2026-09-03)
+
+AWQ pre-scaling (256 samples x 512 tokens, W4A16_ASYM target) + UD imatrix + per-tensor overrides vs baseline UD imatrix + per-tensor overrides. F16 reference PPL: 2.8950.
+
+Perplexity (lower = better):
+- AWQ-UD-Q8_0: 2.8807, baseline UD-Q8_0: 2.8918 (AWQ wins by 0.011)
+- AWQ-UD-Q6_K: 2.8795, baseline UD-Q6_K: 2.8891 (AWQ wins by 0.010)
+- AWQ-UD-Q5_K_M: 2.8672, baseline UD-Q5_K_M: 2.8856 (AWQ wins by 0.018)
+- AWQ-UD-IQ4_XS: 2.8887, baseline UD-IQ4_XS: 2.8990 (AWQ wins by 0.010)
+- All AWQ-UD quants beat F16 (2.8950) on perplexity. AWQ channel rescaling makes weights more quantization-friendly.
+
+KL divergence vs F16 (lower = closer to F16 output distribution):
+- AWQ-UD-Q8_0: mean 0.00384, baseline UD-Q8_0: mean 0.00181 (baseline closer to F16)
+- AWQ-UD-Q6_K: mean 0.00376, baseline UD-Q6_K: mean 0.00153 (baseline closer to F16)
+- AWQ-UD-Q5_K_M: mean 0.00945, baseline UD-Q5_K_M: mean 0.00822 (baseline closer to F16)
+- AWQ-UD-IQ4_XS: mean 0.01922, baseline UD-IQ4_XS: mean 0.01791 (baseline closer to F16)
+- NVFP4: mean 0.03812 (worst — confirms GGUF dequant loses GPTQ benefit)
+- AWQ has higher KLD because channel rescaling shifts the output distribution away from F16, but PPL improves. KLD measures distance from F16, not absolute quality.
+
+Throughput (identical between AWQ-UD and baseline UD at same bit width — AWQ does not change tensor sizes):
+- IQ4_XS (25.9 GB): 4114 pp, 53.2 tg
+- Q5_K_M (28.7 GB): 3845 pp, 49.0 tg
+- Q6_K (30.6 GB): 3530 pp, 47.2 tg
+- Q8_0 (34.7 GB): 4022 pp, 42.4 tg
+- F16 (50.9 GB): 2421 pp, 30.3 tg
+- NVFP4 (22.7 GB): 4719 pp, 64.1 tg
 
 ## Deployment config
 
