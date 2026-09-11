@@ -126,7 +126,16 @@ The stages produce:
 6. UD-prefixed GGUF quants that use both the importance matrix and overrides.
 7. Throughput, perplexity, and output-distribution comparison results.
 
-JSONL is the canonical calibration format. It retains complete conversations, message roles, tool definitions, source revisions, and stable record IDs. The `.txt` files are deterministic renders of the same records for llama.cpp tools. A manifest records the build policy, source counts, tokenizer revision, deduplication counts, and artifact hashes under `calibration/<MODEL_DIR>/`.
+JSONL is the canonical calibration format. It retains complete conversations, message roles, tool definitions, source revisions, and stable record IDs. The `.txt` files are deterministic renders of the same records for llama.cpp tools. A manifest records the build policy, source counts, tokenizer revision, deduplication counts, and artifact hashes under `calibration/<MODEL_DIR>/`. Completed source extracts are cached under `calibration/.source-cache/`, so an interrupted local rebuild does not download them again.
+
+A verified Qwen3.8-Flash-Next calibration build is available as a release asset. Extract it from the repository root before running quantization on another host:
+
+```bash
+curl -L https://github.com/a4501150/super-quant/releases/download/calibration-qwen3.8-flash-next-v1/Qwen3.8-Flash-Next-calibration-v1.tar.gz -o Qwen3.8-Flash-Next-calibration-v1.tar.gz
+tar -xzf Qwen3.8-Flash-Next-calibration-v1.tar.gz -C calibration
+```
+
+Its SHA-256 is `9cc7338e5a8495a87b71eddb5449cd0cf8d880fe5d11daceac01577e3f29c698`.
 
 `make all` runs the normal pipeline with the existing tensor override file. It does not regenerate sensitivity data. Run `make sensitivity` when the model or override policy changes.
 
