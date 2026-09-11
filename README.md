@@ -128,6 +128,8 @@ The stages produce:
 
 JSONL is the canonical calibration format. It retains complete conversations, message roles, tool definitions, source revisions, and stable record IDs. The `.txt` files are deterministic renders of the same records for llama.cpp tools. A manifest records the build policy, source counts, tokenizer revision, deduplication counts, and artifact hashes under `calibration/<MODEL_DIR>/`. Completed source extracts are cached under `calibration/.source-cache/`, so an interrupted local rebuild does not download them again.
 
+Each model must generate or download its own model-scoped calibration build. Do not copy a completed calibration directory, text render, holdout, or manifest to another model, even when both models use the same source datasets.
+
 A verified Qwen3.8-Flash-Next calibration build is available as a release asset. Extract it from the repository root before running quantization on another host:
 
 ```bash
