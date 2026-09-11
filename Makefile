@@ -8,27 +8,35 @@ UV := uv run --project $(PROJECT_DIR)
 
 # Every target reads the active model through configs/model.env. Override it with
 # MODEL_DIR=<model> on the make command; keep model-specific choices out of here.
-MODEL_ID := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$MODEL_ID')
-MODEL_NAME := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$MODEL_NAME')
-MODEL_CONFIG_DIR := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$MODEL_CONFIG_DIR')
-F16_GGUF := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$F16_GGUF')
-LLAMA_PERPLEXITY := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$LLAMA_PERPLEXITY')
-LLAMA_QUANTIZE := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$LLAMA_QUANTIZE')
-GGUF_ARCH_KEY := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$GGUF_ARCH_KEY')
-LLAMACPP_DIR := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$LLAMACPP_DIR')
-MODELS_DIR := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$MODELS_DIR')
-NATIVE_CTX := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$NATIVE_CTX')
-AWQ_CHECKPOINT := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$AWQ_CHECKPOINT')
-AWQ_F16_GGUF := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$AWQ_F16_GGUF')
-AWQ_CALIBRATION_DIR := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$AWQ_CALIBRATION_DIR')
-AWQ_IMATRIX_MERGED := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$AWQ_IMATRIX_MERGED')
-AWQ_TENSOR_OVERRIDES := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$AWQ_TENSOR_OVERRIDES')
-AWQ_SENSITIVITY := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$AWQ_SENSITIVITY')
-CALIBRATION_DIR := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$CALIBRATION_DIR')
-CALIBRATION_DOMAINS := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$CALIBRATION_DOMAINS')
-IMATRIX_WEIGHTS := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$IMATRIX_WEIGHTS')
-IMATRIX_CONTEXT_SIZE := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$IMATRIX_CONTEXT_SIZE')
-QUANT_TYPES_VAR := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$QUANT_TYPES')
+REQUESTED_MODEL_DIR := $(MODEL_DIR)
+MODEL_CONFIG_OK := $(shell MODEL_DIR='$(REQUESTED_MODEL_DIR)' bash -c 'source "$(PROJECT_DIR)/configs/model.env" >/dev/null && printf yes')
+ifneq ($(MODEL_CONFIG_OK),yes)
+$(error Failed to load MODEL_DIR=$(REQUESTED_MODEL_DIR))
+endif
+model_var = $(shell MODEL_DIR='$(REQUESTED_MODEL_DIR)' bash -c 'source "$(PROJECT_DIR)/configs/model.env" && printf "%s" "$${!1}"' _ $(1))
+MODEL_DIR := $(call model_var,MODEL_DIR)
+MODEL_ID := $(call model_var,MODEL_ID)
+MODEL_NAME := $(call model_var,MODEL_NAME)
+MODEL_CONFIG_DIR := $(call model_var,MODEL_CONFIG_DIR)
+QUANT_CONFIG := $(MODEL_CONFIG_DIR)/quantize.json
+F16_GGUF := $(call model_var,F16_GGUF)
+LLAMA_PERPLEXITY := $(call model_var,LLAMA_PERPLEXITY)
+LLAMA_QUANTIZE := $(call model_var,LLAMA_QUANTIZE)
+GGUF_ARCH_KEY := $(call model_var,GGUF_ARCH_KEY)
+LLAMACPP_DIR := $(call model_var,LLAMACPP_DIR)
+MODELS_DIR := $(call model_var,MODELS_DIR)
+NATIVE_CTX := $(call model_var,NATIVE_CTX)
+AWQ_CHECKPOINT := $(call model_var,AWQ_CHECKPOINT)
+AWQ_F16_GGUF := $(call model_var,AWQ_F16_GGUF)
+AWQ_CALIBRATION_DIR := $(call model_var,AWQ_CALIBRATION_DIR)
+AWQ_IMATRIX_MERGED := $(call model_var,AWQ_IMATRIX_MERGED)
+AWQ_TENSOR_OVERRIDES := $(call model_var,AWQ_TENSOR_OVERRIDES)
+AWQ_SENSITIVITY := $(call model_var,AWQ_SENSITIVITY)
+CALIBRATION_DIR := $(call model_var,CALIBRATION_DIR)
+CALIBRATION_DOMAINS := $(call model_var,CALIBRATION_DOMAINS)
+IMATRIX_WEIGHTS := $(call model_var,IMATRIX_WEIGHTS)
+IMATRIX_CONTEXT_SIZE := $(call model_var,IMATRIX_CONTEXT_SIZE)
+QUANT_TYPES_VAR := $(call model_var,QUANT_TYPES)
 
 help:
 	@echo "Super-Quant: Config-Driven Quantization and Serving"
@@ -126,16 +134,17 @@ sensitivity:
 quantize:
 	@$(UV) bash $(SCRIPTS)/04_quantize.sh
 
-# Requires the quantize extra and enough memory for the selected model.
+# Requires the quantize extra, a per-model quantize.json, and enough memory.
 quantize-nvfp4:
+	@test -f "$(QUANT_CONFIG)" || { echo "ERROR: quantization recipe not found: $(QUANT_CONFIG)" >&2; exit 1; }
 	@$(UV) python3 $(SRC)/quantize_nvfp4.py \
-		--model-id $(MODEL_ID) \
+		--config $(QUANT_CONFIG) \
 		--calibration-dir $(PROJECT_DIR)/calibration \
 		--output-dir $(HOME)/models/nvfp4/$(MODEL_NAME)-NVFP4
 
 NVFP4_CHECKPOINT := $(HOME)/models/nvfp4/$(MODEL_NAME)-NVFP4
 NVFP4_GGUF := $(MODELS_DIR)/$(MODEL_NAME)-NVFP4.gguf
-CONVERT_SCRIPT := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$CONVERT_SCRIPT')
+CONVERT_SCRIPT := $(call model_var,CONVERT_SCRIPT)
 
 convert-nvfp4:
 	@$(UV) python3 $(CONVERT_SCRIPT) $(NVFP4_CHECKPOINT) \
@@ -178,14 +187,15 @@ bench-sglang:
 	@MODEL_DIR=$(MODEL_DIR) $(UV) bash $(SCRIPTS)/11_bench_sglang.sh
 
 test:
-	@$(UV) python -m unittest discover -s tests -v
+	@$(UV) --extra quantize python -m unittest discover -s tests -v
 
 # --- AWQ pre-scaled pipeline ---
 # These targets require `uv sync --extra quantize` and enough host/GPU memory
 # for the selected model. Resource limits belong to the host, not MODEL_DIR.
 awq-prescale:
+	@test -f "$(QUANT_CONFIG)" || { echo "ERROR: quantization recipe not found: $(QUANT_CONFIG)" >&2; exit 1; }
 	@$(UV) python3 $(SRC)/awq_prescale.py \
-		--model-id $(MODEL_ID) \
+		--config $(QUANT_CONFIG) \
 		--calibration-dir $(PROJECT_DIR)/calibration \
 		--output-dir $(AWQ_CHECKPOINT)
 
@@ -225,7 +235,6 @@ awq-sensitivity:
 
 awq-quantize:
 	@bash -c '\
-		source $(PROJECT_DIR)/configs/model.env && \
 		IMATRIX="$(AWQ_IMATRIX_MERGED)" && \
 		OVERRIDES_CLEAN=$$(mktemp) && \
 		grep -v "^\s*#" "$(AWQ_TENSOR_OVERRIDES)" | grep -v "^\s*$$" > "$$OVERRIDES_CLEAN" && \
@@ -243,8 +252,6 @@ awq-quantize:
 	'
 
 awq-all: awq-prescale awq-convert awq-imatrix awq-sensitivity awq-quantize
-
-MODELS_DIR := $(shell bash -c 'source $(PROJECT_DIR)/configs/model.env && echo $$MODELS_DIR')
 
 clean:
 	rm -rf $(PROJECT_DIR)/.venv

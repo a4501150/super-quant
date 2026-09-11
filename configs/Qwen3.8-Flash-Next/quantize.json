@@ -1,0 +1,101 @@
+{
+  "source": {
+    "model_id": "Qwen/Qwen3.8-Flash-Next",
+    "task": "image-text-to-text",
+    "trust_remote_code": false
+  },
+  "save": {
+    "shard_size": "4GB"
+  },
+  "awq_prescale": {
+    "calibration": {
+      "domains": ["general", "code", "reasoning", "agentic"],
+      "num_samples": 256,
+      "max_length": 512
+    },
+    "mappings": [
+      {
+        "smooth_layer": "re:.*mlp\\.(experts\\.\\d+|shared_expert)\\.up_proj$",
+        "balance_layers": [
+          "re:.*mlp\\.(experts\\.\\d+|shared_expert)\\.down_proj$"
+        ]
+      }
+    ],
+    "duo_scaling": true,
+    "n_grid": 20,
+    "temporary_scheme": "W4A16_ASYM",
+    "targets": [
+      "re:.*layers\\.\\d+\\.self_attn\\.(q|k|v|o)_proj$",
+      "re:.*layers\\.\\d+\\.linear_attn\\.(in_proj_qkv|in_proj_z|out_proj)$",
+      "re:.*layers\\.\\d+\\.mlp\\.(experts\\.\\d+|shared_expert)\\.(gate|up|down)_proj$"
+    ],
+    "ignore": [
+      "lm_head",
+      "re:.*embed_tokens$",
+      "re:.*visual.*",
+      "re:.*mtp.*",
+      "re:.*\\.ple\\..*",
+      "re:.*indexer.*",
+      "re:.*hyper_connection.*",
+      "re:.*linear_attn\\.(in_proj_b|in_proj_a|conv1d|A_log|dt_bias|norm)$",
+      "re:.*layernorm.*",
+      "re:.*_norm$",
+      "re:.*\\.norm\\.weight$"
+    ]
+  },
+  "nvfp4": {
+    "calibration": {
+      "domains": ["general", "code", "reasoning", "agentic"],
+      "num_samples": 1024,
+      "max_length": 1024
+    },
+    "mappings": [
+      {
+        "smooth_layer": "re:.*mlp\\.(experts\\.\\d+|shared_expert)\\.up_proj$",
+        "balance_layers": [
+          "re:.*mlp\\.(experts\\.\\d+|shared_expert)\\.down_proj$"
+        ]
+      }
+    ],
+    "duo_scaling": true,
+    "n_grid": 20,
+    "groups": [
+      {
+        "name": "nvfp4_experts",
+        "format": "nvfp4",
+        "targets": [
+          "re:.*layers\\.([0-9]|[1-3][0-9]|4[0-7])\\.mlp\\.experts\\.\\d+\\.(gate|up|down)_proj$"
+        ]
+      },
+      {
+        "name": "fp8_sensitive",
+        "format": "fp8",
+        "targets": [
+          "re:.*self_attn\\.(q|k|v|o)_proj$",
+          "re:.*linear_attn\\.(in_proj_qkv|in_proj_z|out_proj)$",
+          "re:.*mlp\\.shared_expert\\.(gate|up|down)_proj$"
+        ]
+      }
+    ],
+    "ignore": [
+      "lm_head",
+      "re:.*embed_tokens$",
+      "re:.*visual.*",
+      "re:.*mtp.*",
+      "re:.*\\.ple\\..*",
+      "re:.*indexer.*",
+      "re:.*hyper_connection.*",
+      "re:.*linear_attn\\.(in_proj_b|in_proj_a|conv1d|A_log|dt_bias|norm)$",
+      "re:.*layernorm.*",
+      "re:.*_norm$",
+      "re:.*\\.norm\\.weight$"
+    ],
+    "kv_cache": "fp8",
+    "gptq": {
+      "block_size": 128,
+      "dampening_frac": 0.01,
+      "actorder": "static",
+      "offload_hessians": true
+    }
+  }
+}

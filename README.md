@@ -129,7 +129,7 @@ The stages produce:
 
 ### AWQ-UD pipeline
 
-AWQ channel pre-scaling uses separate checkpoints, matrices, sensitivity results, overrides, and GGUF names. It can run for any compatible model configuration on a host with enough GPU and system memory:
+AWQ channel pre-scaling uses separate checkpoints, matrices, sensitivity results, overrides, and GGUF names. A compatible model provides `configs/<model>/quantize.json`, which selects its source-precision checkpoint, calibration policy, module targets, and exclusions. Run it on a host with enough GPU and system memory:
 
 ```bash
 uv sync --extra quantize
@@ -137,11 +137,11 @@ MODEL_DIR=<model> make calibrate
 MODEL_DIR=<model> make awq-all
 ```
 
-Do not mix AWQ artifacts with baseline weights. AWQ changes the channel basis used by later calibration stages.
+Do not use an already quantized checkpoint as the source, and do not mix AWQ artifacts with baseline weights. AWQ changes the channel basis used by later calibration stages.
 
 ### Native NVFP4 pipeline
 
-Create an AWQ plus GPTQ NVFP4 checkpoint for any compatible model on a sufficiently large host:
+Create an AWQ plus GPTQ NVFP4 checkpoint for any model with a quantization recipe on a sufficiently large host:
 
 ```bash
 uv sync --extra quantize
@@ -149,7 +149,7 @@ MODEL_DIR=<model> make calibrate
 MODEL_DIR=<model> make quantize-nvfp4
 ```
 
-Convert that checkpoint to GGUF only when llama.cpp compatibility is required:
+The checked-in native recipes calibrate static FP8 KV-cache scales for SGLang and vLLM. Convert that checkpoint to GGUF only when llama.cpp compatibility is required:
 
 ```bash
 MODEL_DIR=<model> make convert-nvfp4
@@ -183,10 +183,10 @@ Every Make target resolves the active model through `configs/model.env` and then
 
 - Common identity: `MODEL_ID`, `MODEL_NAME`, and `NATIVE_CTX`.
 - GGUF stages: `GGUF_ARCH_KEY`, `QUANT_TYPES`, calibration domains, and imatrix settings.
-- Native quantization: checkpoint and output paths used by AWQ, GPTQ, or NVFP4.
+- Native quantization: checkpoint and output paths used by AWQ, GPTQ, or NVFP4. Structured recipe policy lives in the optional `configs/<model>/quantize.json` file.
 - Serving: model checkpoint, alias, context, backend, cache, and optional speculative-decoding settings.
 
-A model does not need variables for unsupported or unused stages. If a selected target needs a missing field, add it to that model's config instead of adding model-name conditions to the Makefile or scripts.
+A model does not need variables or a recipe for unsupported stages. If a selected target needs missing model policy, add it to that model's config directory instead of adding model-name conditions to the Makefile or scripts.
 
 Machine paths and shared build settings live in `configs/model.env`. CUDA and serving-environment pins live in `configs/sglang.env` and `configs/vllm.env`.
 
