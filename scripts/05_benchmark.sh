@@ -36,10 +36,11 @@ PPL_JSON="${RESULTS_DIR}/.bench_ppl_${TIMESTAMP}.json"
 F16_LOGITS="${RESULTS_DIR}/.f16_logits_${TIMESTAMP}.bin"
 PPL_CHUNKS=32
 
-# Perplexity test file
-PPL_FILE="${CALIBRATION_DIR}/perplexity_test.txt"
-if [[ ! -f "${PPL_FILE}" ]]; then
-    head -c 500000 "${CALIBRATION_DIR}/combined.txt" > "${PPL_FILE}"
+PPL_FILE="${CALIBRATION_DIR}/holdout.txt"
+if [[ ! -s "${PPL_FILE}" ]]; then
+    echo "ERROR: Calibration holdout not found: ${PPL_FILE}" >&2
+    echo "Run: make calibrate" >&2
+    exit 1
 fi
 
 echo '{}' > "${PPL_JSON}"

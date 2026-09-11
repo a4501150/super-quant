@@ -15,8 +15,15 @@
         "reasoning",
         "agentic"
       ],
-      "num_samples": 256,
-      "max_length": 512
+      "token_budget": 131072,
+      "sequence_length": 2048,
+      "domain_weights": {
+        "general": 0.35,
+        "code": 0.25,
+        "reasoning": 0.25,
+        "agentic": 0.15
+      },
+      "minimum_achieved_ratio": 0.98
     },
     "mappings": null,
     "duo_scaling": true,
@@ -39,16 +46,6 @@
     ]
   },
   "nvfp4": {
-    "calibration": {
-      "domains": [
-        "general",
-        "code",
-        "reasoning",
-        "agentic"
-      ],
-      "num_samples": 1024,
-      "max_length": 1024
-    },
     "mappings": [
       {
         "smooth_layer": "re:.*post_attention_layernorm$",
@@ -100,6 +97,47 @@
       "dampening_frac": 0.01,
       "actorder": "static",
       "offload_hessians": false
+    },
+    "weight_calibration": {
+      "domains": [
+        "general",
+        "code",
+        "reasoning",
+        "agentic"
+      ],
+      "token_budget": 1048576,
+      "sequence_length": 2048,
+      "domain_weights": {
+        "general": 0.35,
+        "code": 0.25,
+        "reasoning": 0.25,
+        "agentic": 0.15
+      },
+      "minimum_achieved_ratio": 0.98
+    },
+    "kv_calibration": {
+      "domains": [
+        "general",
+        "code",
+        "reasoning",
+        "agentic"
+      ],
+      "token_budget": 262144,
+      "sequence_length": 8192,
+      "domain_weights": {
+        "general": 0.35,
+        "code": 0.25,
+        "reasoning": 0.25,
+        "agentic": 0.15
+      },
+      "minimum_achieved_ratio": 0.98,
+      "position_offsets": [
+        0,
+        32768,
+        131072,
+        253952
+      ],
+      "max_position": 262144
     }
   }
 }

@@ -17,6 +17,7 @@ model_var = $(shell MODEL_DIR='$(REQUESTED_MODEL_DIR)' bash -c 'source "$(PROJEC
 MODEL_DIR := $(call model_var,MODEL_DIR)
 MODEL_ID := $(call model_var,MODEL_ID)
 MODEL_NAME := $(call model_var,MODEL_NAME)
+CALIBRATION_MODEL_ID := $(call model_var,CALIBRATION_MODEL_ID)
 MODEL_CONFIG_DIR := $(call model_var,MODEL_CONFIG_DIR)
 QUANT_CONFIG := $(MODEL_CONFIG_DIR)/quantize.json
 F16_GGUF := $(call model_var,F16_GGUF)
@@ -111,10 +112,10 @@ convert:
 	@$(UV) bash $(SCRIPTS)/02_convert_to_gguf.sh
 
 calibrate:
-	@$(UV) python3 $(SRC)/prepare_calibration.py --output-dir $(PROJECT_DIR)/calibration --model-id $(MODEL_ID)
+	@$(UV) python3 $(SRC)/prepare_calibration.py --output-dir $(CALIBRATION_DIR) --model-id $(CALIBRATION_MODEL_ID)
 
 recalibrate:
-	@$(UV) python3 $(SRC)/prepare_calibration.py --output-dir $(PROJECT_DIR)/calibration --model-id $(MODEL_ID) --force
+	@$(UV) python3 $(SRC)/prepare_calibration.py --output-dir $(CALIBRATION_DIR) --model-id $(CALIBRATION_MODEL_ID) --force
 
 imatrix:
 	@$(UV) bash $(SCRIPTS)/03_generate_imatrix_gpu.sh
@@ -122,7 +123,7 @@ imatrix:
 sensitivity:
 	@$(UV) python3 $(SRC)/sensitivity_analysis.py \
 		--model-id $(MODEL_ID) \
-		--test-file $(PROJECT_DIR)/calibration/combined.txt \
+		--test-file $(CALIBRATION_DIR)/holdout.txt \
 		--gguf-arch-key $(GGUF_ARCH_KEY) \
 		--llamacpp-dir $(LLAMACPP_DIR) \
 		--output-json $(PROJECT_DIR)/results/sensitivity.json
@@ -139,7 +140,7 @@ quantize-nvfp4:
 	@test -f "$(QUANT_CONFIG)" || { echo "ERROR: quantization recipe not found: $(QUANT_CONFIG)" >&2; exit 1; }
 	@$(UV) python3 $(SRC)/quantize_nvfp4.py \
 		--config $(QUANT_CONFIG) \
-		--calibration-dir $(PROJECT_DIR)/calibration \
+		--calibration-dir $(CALIBRATION_DIR) \
 		--output-dir $(HOME)/models/nvfp4/$(MODEL_NAME)-NVFP4
 
 NVFP4_CHECKPOINT := $(HOME)/models/nvfp4/$(MODEL_NAME)-NVFP4
@@ -196,7 +197,7 @@ awq-prescale:
 	@test -f "$(QUANT_CONFIG)" || { echo "ERROR: quantization recipe not found: $(QUANT_CONFIG)" >&2; exit 1; }
 	@$(UV) python3 $(SRC)/awq_prescale.py \
 		--config $(QUANT_CONFIG) \
-		--calibration-dir $(PROJECT_DIR)/calibration \
+		--calibration-dir $(CALIBRATION_DIR) \
 		--output-dir $(AWQ_CHECKPOINT)
 
 awq-convert:
@@ -224,7 +225,7 @@ awq-imatrix:
 awq-sensitivity:
 	@$(UV) python3 $(SRC)/sensitivity_analysis.py \
 		--model-id $(AWQ_CHECKPOINT) \
-		--test-file $(CALIBRATION_DIR)/combined.txt \
+		--test-file $(CALIBRATION_DIR)/holdout.txt \
 		--gguf-arch-key $(GGUF_ARCH_KEY) \
 		--llamacpp-dir $(LLAMACPP_DIR) \
 		--output-json $(AWQ_SENSITIVITY)
@@ -255,7 +256,6 @@ awq-all: awq-prescale awq-convert awq-imatrix awq-sensitivity awq-quantize
 
 clean:
 	rm -rf $(PROJECT_DIR)/.venv
-	rm -f $(PROJECT_DIR)/calibration/*.dat
-	rm -f $(PROJECT_DIR)/calibration/*.txt
+	rm -rf $(CALIBRATION_DIR)
 	rm -rf $(PROJECT_DIR)/results/*
 	@echo "Cleaned. Models preserved in $(MODELS_DIR)"

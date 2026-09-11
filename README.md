@@ -119,11 +119,14 @@ make compare
 The stages produce:
 
 1. A source-precision GGUF with MTP tensors.
-2. Complete multi-domain calibration samples.
-3. Per-domain importance matrices and a weighted merged matrix.
-4. Sensitivity-driven, model-specific tensor overrides.
-5. UD-prefixed GGUF quants that use both the importance matrix and overrides.
-6. Throughput, perplexity, and output-distribution comparison results.
+2. Model-scoped multi-domain JSONL calibration records and deterministic text renders.
+3. A disjoint structured holdout for sensitivity and perplexity checks.
+4. Per-domain importance matrices and a weighted merged matrix.
+5. Sensitivity-driven, model-specific tensor overrides.
+6. UD-prefixed GGUF quants that use both the importance matrix and overrides.
+7. Throughput, perplexity, and output-distribution comparison results.
+
+JSONL is the canonical calibration format. It retains complete conversations, message roles, tool definitions, source revisions, and stable record IDs. The `.txt` files are deterministic renders of the same records for llama.cpp tools. A manifest records the build policy, source counts, tokenizer revision, deduplication counts, and artifact hashes under `calibration/<MODEL_DIR>/`.
 
 `make all` runs the normal pipeline with the existing tensor override file. It does not regenerate sensitivity data. Run `make sensitivity` when the model or override policy changes.
 
@@ -137,7 +140,7 @@ MODEL_DIR=<model> make calibrate
 MODEL_DIR=<model> make awq-all
 ```
 
-Do not use an already quantized checkpoint as the source, and do not mix AWQ artifacts with baseline weights. AWQ changes the channel basis used by later calibration stages.
+Do not use an already quantized checkpoint as the source, and do not mix AWQ artifacts with baseline weights. AWQ changes the channel basis used by later calibration stages. The checked-in AWQ recipes select approximately 128K effective tokens across weighted domains and pack only complete conversations; overlength conversations are reported and skipped rather than truncated.
 
 ### Native NVFP4 pipeline
 
@@ -149,7 +152,7 @@ MODEL_DIR=<model> make calibrate
 MODEL_DIR=<model> make quantize-nvfp4
 ```
 
-The checked-in native recipes calibrate static FP8 KV-cache scales for SGLang and vLLM. Convert that checkpoint to GGUF only when llama.cpp compatibility is required:
+The checked-in native recipes use approximately 1M effective weight-calibration tokens for the dense 27B models and 2M for Flash-Next. Static FP8 KV-cache scales use a separate 262K-token pass with explicit position offsets through the 262,144-token context range. Flash-Next also runs a real router preflight, writes `expert_coverage.json`, and fails if any routed expert does not meet its coverage policy. Convert the checkpoint to GGUF only when llama.cpp compatibility is required:
 
 ```bash
 MODEL_DIR=<model> make convert-nvfp4
@@ -190,7 +193,7 @@ A model does not need variables or a recipe for unsupported stages. If a selecte
 
 Machine paths and shared build settings live in `configs/model.env`. CUDA and serving-environment pins live in `configs/sglang.env` and `configs/vllm.env`.
 
-Generated models are outside the repository:
+Generated calibration data is stored in `calibration/<MODEL_DIR>/` and ignored by Git. Generated models are outside the repository:
 
 - GGUF: `~/models/gguf`
 - NVFP4: `~/models/nvfp4`

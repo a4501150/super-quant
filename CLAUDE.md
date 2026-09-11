@@ -20,8 +20,9 @@ Config-driven quantization and serving pipeline for hybrid language models. The 
 - RecoverSSM work must finish before Mamba state copy, donation, quantization, free, or slot reuse. Preserve this ordering when changing cache code.
 - The Qwen3.6/3.8 27B AEON models are hybrid architectures: 48 of 64 layers use GatedDeltaNet recurrence and 16 use full attention. Quantization error in recurrence tensors compounds across token positions.
 - Per-tensor override patterns are regular expressions. Anchor and escape tensor names, for example `^blk\.3\.attn_output\.weight$=f16`; an unescaped dot or unanchored name can match unrelated tensors.
-- Tensor overrides and importance matrices are model-specific. Never use an artifact generated from one model or AWQ channel basis with another.
-- Calibration samples must remain complete. Do not truncate a conversation to meet a token target, and do not replace the multi-domain set with Wikipedia-only data.
+- Calibration records, tensor overrides, and importance matrices are model-specific. Never reuse an artifact from another model or AWQ channel basis; generated calibration data belongs under `calibration/<MODEL_DIR>`.
+- JSONL is the canonical calibration source. Preserve every conversation as one complete role-aware record; never split or truncate a conversation to meet a token target, and do not replace the multi-domain set with Wikipedia-only data.
+- Routed-MoE calibration must measure real router selections and fail its coverage policy. Do not enable synthetic all-expert calibration to hide uncovered experts.
 - MTP tensors must be included during GGUF conversion. Current llama.cpp uses `--spec-type draft-mtp`, not `--spec-type mtp`.
 - MTP helps single-request latency but reduces concurrent throughput for these models. Do not enable it by default for concurrent service.
 - TurboQuant KV cache types are not usable here because their internal rotation conflicts with the graph-level Hadamard rotation. Use supported standard KV types.

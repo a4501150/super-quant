@@ -73,9 +73,8 @@ else
         fi
     done
 
-    cuda_major="${SGLANG_CUDA_VERSION%%.*}"
-    if [[ "${cuda_major}" != "13" ]]; then
-        echo "ERROR: SGLang requires CUDA 13.x" >&2
+    if [[ "${SGLANG_CUDA_VERSION}" != "13.4" ]]; then
+        echo "ERROR: SGLang requires CUDA 13.4" >&2
         exit 1
     fi
 

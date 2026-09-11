@@ -9,7 +9,9 @@ import json
 import os
 import random
 import re
+import statistics
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +23,8 @@ from transformers import (
     AutoTokenizer,
     PretrainedConfig,
 )
+
+CALIBRATION_SCHEMA_VERSION = 1
 
 QUANTIZATION_TASKS = {
     "causal-lm": AutoModelForCausalLM,
@@ -203,16 +207,55 @@ def _validate_string_list(value: Any, path: str, *, allow_empty: bool = False) -
                 ) from exc
 
 
-def _validate_calibration(value: Any, path: str) -> None:
-    data = _validate_object(
-        value,
-        path,
-        required={"domains", "num_samples", "max_length"},
-    )
+def _validate_calibration(
+    value: Any, path: str, *, long_positions: bool = False
+) -> None:
+    required = {
+        "domains",
+        "token_budget",
+        "sequence_length",
+        "domain_weights",
+        "minimum_achieved_ratio",
+    }
+    if long_positions:
+        required.update({"position_offsets", "max_position"})
+    data = _validate_object(value, path, required=required)
     _validate_string_list(data["domains"], f"{path}.domains")
-    for key in ("num_samples", "max_length"):
+    if len(data["domains"]) != len(set(data["domains"])):
+        raise ValueError(f"{path}.domains must be unique")
+    for key in ("token_budget", "sequence_length"):
         if type(data[key]) is not int or data[key] <= 0:
             raise ValueError(f"{path}.{key} must be a positive integer")
+    if data["token_budget"] < len(data["domains"]):
+        raise ValueError(
+            f"{path}.token_budget must provide at least one token per domain"
+        )
+    weights = data["domain_weights"]
+    if not isinstance(weights, dict) or set(weights) != set(data["domains"]):
+        raise ValueError(f"{path}.domain_weights must define each configured domain")
+    if any(
+        type(weight) not in {int, float} or weight <= 0 for weight in weights.values()
+    ):
+        raise ValueError(f"{path}.domain_weights values must be positive numbers")
+    if abs(sum(weights.values()) - 1.0) > 1e-6:
+        raise ValueError(f"{path}.domain_weights must sum to 1")
+    ratio = data["minimum_achieved_ratio"]
+    if type(ratio) not in {int, float} or not 0 < ratio <= 1:
+        raise ValueError(f"{path}.minimum_achieved_ratio must be in (0, 1]")
+    if long_positions:
+        offsets = data["position_offsets"]
+        if (
+            not isinstance(offsets, list)
+            or not offsets
+            or any(type(offset) is not int or offset < 0 for offset in offsets)
+        ):
+            raise ValueError(f"{path}.position_offsets must be non-negative integers")
+        if offsets != sorted(set(offsets)):
+            raise ValueError(f"{path}.position_offsets must be sorted and unique")
+        if type(data["max_position"]) is not int or data["max_position"] <= 0:
+            raise ValueError(f"{path}.max_position must be a positive integer")
+        if offsets[-1] + data["sequence_length"] > data["max_position"]:
+            raise ValueError(f"{path}.position_offsets exceed max_position")
 
 
 def _validate_awq_mappings(value: Any, path: str) -> None:
@@ -233,8 +276,10 @@ def _validate_awq_mappings(value: Any, path: str) -> None:
         )
 
 
-def _validate_awq_common(data: dict[str, Any], path: str) -> None:
-    _validate_calibration(data["calibration"], f"{path}.calibration")
+def _validate_awq_common(
+    data: dict[str, Any], path: str, calibration_key: str = "calibration"
+) -> None:
+    _validate_calibration(data[calibration_key], f"{path}.{calibration_key}")
     _validate_awq_mappings(data["mappings"], f"{path}.mappings")
     if not isinstance(data["duo_scaling"], bool):
         raise TypeError(f"{path}.duo_scaling must be a boolean")
@@ -298,7 +343,8 @@ def load_quantization_recipe(path: str | os.PathLike[str]) -> dict[str, Any]:
         root["nvfp4"],
         "recipe.nvfp4",
         required={
-            "calibration",
+            "weight_calibration",
+            "kv_calibration",
             "mappings",
             "duo_scaling",
             "n_grid",
@@ -307,8 +353,9 @@ def load_quantization_recipe(path: str | os.PathLike[str]) -> dict[str, Any]:
             "kv_cache",
             "gptq",
         },
+        optional={"expert_coverage"},
     )
-    _validate_awq_common(nvfp4, "recipe.nvfp4")
+    _validate_awq_common(nvfp4, "recipe.nvfp4", "weight_calibration")
     _validate_string_list(nvfp4["ignore"], "recipe.nvfp4.ignore", allow_empty=True)
     if not isinstance(nvfp4["groups"], list) or not nvfp4["groups"]:
         raise ValueError("recipe.nvfp4.groups must be a non-empty list")
@@ -340,6 +387,51 @@ def load_quantization_recipe(path: str | os.PathLike[str]) -> dict[str, Any]:
 
     if nvfp4["kv_cache"] not in {None, "fp8"}:
         raise ValueError("recipe.nvfp4.kv_cache must be null or 'fp8'")
+    if nvfp4["kv_cache"] == "fp8":
+        _validate_calibration(
+            nvfp4["kv_calibration"],
+            "recipe.nvfp4.kv_calibration",
+            long_positions=True,
+        )
+    elif nvfp4["kv_calibration"] is not None:
+        raise ValueError("recipe.nvfp4.kv_calibration must be null without kv_cache")
+    if "expert_coverage" in nvfp4:
+        coverage = _validate_object(
+            nvfp4["expert_coverage"],
+            "recipe.nvfp4.expert_coverage",
+            required={
+                "router_patterns",
+                "output_index",
+                "num_experts_config_key",
+                "top_k_config_key",
+                "token_budget",
+                "minimum_tokens_per_expert",
+                "maximum_uncovered_experts",
+            },
+        )
+        _validate_string_list(
+            coverage["router_patterns"],
+            "recipe.nvfp4.expert_coverage.router_patterns",
+        )
+        for key in (
+            "output_index",
+            "token_budget",
+            "minimum_tokens_per_expert",
+            "maximum_uncovered_experts",
+        ):
+            if type(coverage[key]) is not int or coverage[key] < 0:
+                raise ValueError(
+                    f"recipe.nvfp4.expert_coverage.{key} must be a non-negative integer"
+                )
+        if coverage["token_budget"] == 0:
+            raise ValueError(
+                "recipe.nvfp4.expert_coverage.token_budget must be positive"
+            )
+        for key in ("num_experts_config_key", "top_k_config_key"):
+            if not isinstance(coverage[key], str) or not coverage[key]:
+                raise ValueError(
+                    f"recipe.nvfp4.expert_coverage.{key} must be a non-empty string"
+                )
     gptq = _validate_object(
         nvfp4["gptq"],
         "recipe.nvfp4.gptq",
@@ -407,6 +499,26 @@ def load_quantization_tokenizer(recipe: dict[str, Any]):
     )
 
 
+def save_quantization_processor(
+    recipe: dict[str, Any], output_dir: str | os.PathLike[str]
+) -> None:
+    if recipe["source"]["task"] != "image-text-to-text":
+        return
+    from huggingface_hub import hf_hub_download
+
+    source = recipe["source"]
+    source_path = Path(source["model_id"])
+    if source_path.is_dir():
+        config_path = source_path / "preprocessor_config.json"
+    else:
+        config_path = Path(
+            hf_hub_download(source["model_id"], "preprocessor_config.json")
+        )
+    (Path(output_dir) / "preprocessor_config.json").write_bytes(
+        config_path.read_bytes()
+    )
+
+
 def build_awq_modifier(settings: dict[str, Any]):
     from llmcompressor.modifiers.transform.awq import AWQModifier
     from llmcompressor.modifiers.transform.awq.mappings import AWQMapping
@@ -427,48 +539,478 @@ def build_awq_modifier(settings: dict[str, Any]):
     )
 
 
-def load_calibration_texts(calibration_dir: str, domains: list[str]) -> list[str]:
-    samples = []
+def _validate_calibration_record_payload(
+    record: dict[str, Any], path: Path, line_number: int
+) -> None:
+    location = f"{path}:{line_number}"
+    if record.get("kind") == "document":
+        if not isinstance(record.get("text"), str) or not record["text"].strip():
+            raise ValueError(f"Document record has no text in {location}")
+        return
+    messages = record.get("messages")
+    if not isinstance(messages, list) or not messages:
+        raise ValueError(f"Conversation record has no messages in {location}")
+    for index, message in enumerate(messages):
+        if not isinstance(message, dict):
+            raise TypeError(f"Invalid message {index} in {location}")
+        if message.get("role") not in {"system", "user", "assistant", "tool"}:
+            raise ValueError(f"Invalid message role at message {index} in {location}")
+        if (
+            not isinstance(message.get("content"), str)
+            or not message["content"].strip()
+        ):
+            raise ValueError(f"Empty message content at message {index} in {location}")
+
+
+def load_calibration_records(
+    calibration_dir: str | os.PathLike[str], domains: list[str]
+) -> dict[str, list[dict[str, Any]]]:
+    records_by_domain = {}
+    seen_ids = set()
     for domain in domains:
-        path = Path(calibration_dir) / f"{domain}.txt"
-        if not path.exists():
-            print(f"WARNING: {path} not found, skipping domain '{domain}'")
+        path = Path(calibration_dir) / f"{domain}.jsonl"
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except FileNotFoundError as exc:
+            raise ValueError(f"Calibration records not found: {path}") from exc
+        records = []
+        for line_number, line in enumerate(lines, 1):
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    f"Invalid JSON in {path}:{line_number}: {exc}"
+                ) from exc
+            if record.get("schema_version") != CALIBRATION_SCHEMA_VERSION:
+                raise ValueError(
+                    f"Unsupported calibration schema in {path}:{line_number}: "
+                    f"{record.get('schema_version')!r}"
+                )
+            if record.get("domain") != domain:
+                raise ValueError(
+                    f"Domain mismatch in {path}:{line_number}: {record.get('domain')!r}"
+                )
+            if record.get("kind") not in {"messages", "document"}:
+                raise ValueError(f"Invalid record kind in {path}:{line_number}")
+            _validate_calibration_record_payload(record, path, line_number)
+            record_id = record.get("id")
+            if not isinstance(record_id, str) or not record_id:
+                raise ValueError(f"Missing record ID in {path}:{line_number}")
+            if record_id in seen_ids:
+                raise ValueError(f"Duplicate calibration record ID: {record_id}")
+            seen_ids.add(record_id)
+            records.append(record)
+        if not records:
+            raise ValueError(f"No calibration records in {path}")
+        records_by_domain[domain] = records
+        print(f"  {domain}: {len(records):,} structured records from {path}")
+    return records_by_domain
+
+
+def _as_token_ids(value: Any) -> list[int]:
+    if isinstance(value, torch.Tensor):
+        value = value.squeeze(0).tolist()
+    if value and isinstance(value[0], list):
+        value = value[0]
+    return list(value)
+
+
+def _tokenize_calibration_record(record: dict[str, Any], tokenizer) -> list[int]:
+    if record["kind"] == "document":
+        return tokenizer.encode(record["text"], add_special_tokens=False)
+    inputs = tokenizer.apply_chat_template(
+        record["messages"],
+        tokenize=True,
+        return_dict=True,
+        add_generation_prompt=False,
+        return_tensors=None,
+        padding=False,
+        truncation=False,
+    )
+    return _as_token_ids(inputs["input_ids"])
+
+
+def _domain_token_quotas(calibration: dict[str, Any]) -> dict[str, int]:
+    domains = calibration["domains"]
+    remaining = calibration["token_budget"] - len(domains)
+    quotas = {
+        domain: 1 + int(remaining * calibration["domain_weights"][domain])
+        for domain in domains[:-1]
+    }
+    quotas[domains[-1]] = calibration["token_budget"] - sum(quotas.values())
+    return quotas
+
+
+def _document_token_segments(text: str, tokenizer, sequence_length: int):
+    separator = tokenizer.encode("\n\n", add_special_tokens=False)
+    current = []
+    for paragraph in (part.strip() for part in re.split(r"\n\s*\n", text)):
+        if not paragraph:
             continue
-        chunks = re.split(r"\n{2,}", path.read_text(encoding="utf-8"))
-        domain_samples = [chunk.strip() for chunk in chunks if len(chunk.strip()) > 100]
-        print(f"  {domain}: {len(domain_samples)} samples from {path}")
-        samples.extend(domain_samples)
-    if not samples:
-        raise ValueError("No calibration samples were loaded")
-    return samples
+        token_ids = tokenizer.encode(paragraph, add_special_tokens=False)
+        if len(token_ids) > sequence_length:
+            if current:
+                yield current
+                current = []
+            for start in range(0, len(token_ids), sequence_length):
+                yield token_ids[start : start + sequence_length]
+            continue
+        addition = [*separator, *token_ids] if current else token_ids
+        if current and len(current) + len(addition) > sequence_length:
+            yield current
+            current = token_ids
+        else:
+            current.extend(addition)
+    if current:
+        yield current
 
 
-def build_calibration_dataset(samples, tokenizer, num_samples: int, max_length: int):
+def _calibration_units(
+    records: list[dict[str, Any]], tokenizer, sequence_length: int
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    units = []
+    stats = {
+        "input_records": len(records),
+        "document_segments": 0,
+        "skipped_conversations": 0,
+        "skipped_conversation_tokens": 0,
+    }
+    for record in records:
+        if record["kind"] == "messages":
+            token_ids = _tokenize_calibration_record(record, tokenizer)
+            if len(token_ids) > sequence_length:
+                stats["skipped_conversations"] += 1
+                stats["skipped_conversation_tokens"] += len(token_ids)
+                continue
+            units.append({"id": record["id"], "token_ids": token_ids})
+            continue
+        for index, segment in enumerate(
+            _document_token_segments(record["text"], tokenizer, sequence_length)
+        ):
+            units.append({"id": f"{record['id']}:{index}", "token_ids": segment})
+            stats["document_segments"] += 1
+    return units, stats
+
+
+def _pack_calibration_units(
+    units: list[dict[str, Any]], sequence_length: int, separator_id: int, pad_id: int
+) -> tuple[list[dict[str, list[int]]], dict[str, int]]:
+    rows = []
+    current = []
+    packed_tokens = 0
+    separators = 0
+    for unit in units:
+        token_ids = unit["token_ids"]
+        separator = [separator_id] if current else []
+        if current and len(current) + len(separator) + len(token_ids) > sequence_length:
+            padding = sequence_length - len(current)
+            rows.append(
+                {
+                    "input_ids": current + [pad_id] * padding,
+                    "attention_mask": [1] * len(current) + [0] * padding,
+                }
+            )
+            current = []
+            separator = []
+        current.extend(separator)
+        current.extend(token_ids)
+        packed_tokens += len(token_ids)
+        separators += len(separator)
+    if current:
+        padding = sequence_length - len(current)
+        rows.append(
+            {
+                "input_ids": current + [pad_id] * padding,
+                "attention_mask": [1] * len(current) + [0] * padding,
+            }
+        )
+    padding_tokens = len(rows) * sequence_length - packed_tokens - separators
+    return rows, {
+        "sequences": len(rows),
+        "packed_tokens": packed_tokens,
+        "separator_tokens": separators,
+        "padding_tokens": padding_tokens,
+    }
+
+
+def build_calibration_dataset(
+    calibration_dir: str | os.PathLike[str],
+    tokenizer,
+    calibration: dict[str, Any],
+    *,
+    seed: int = 42,
+    records_by_domain: dict[str, list[dict[str, Any]]] | None = None,
+):
     import datasets
 
-    shuffled = list(samples)
-    random.Random(42).shuffle(shuffled)
-    tokenized = []
-    for text in shuffled[:num_samples]:
-        messages = [{"role": "user", "content": text}]
-        inputs = tokenizer.apply_chat_template(
-            messages,
-            tokenize=True,
-            return_dict=True,
-            add_generation_prompt=False,
-            return_tensors="pt",
-            padding=False,
-            truncation=True,
-            max_length=max_length,
+    if records_by_domain is None:
+        records_by_domain = load_calibration_records(
+            calibration_dir, calibration["domains"]
         )
-        tokenized.append(
-            {key: value.squeeze(0).tolist() for key, value in inputs.items()}
-        )
-    if not tokenized:
-        raise ValueError("No calibration samples remained after tokenization")
-    return datasets.Dataset.from_dict(
-        {key: [item[key] for item in tokenized] for key in tokenized[0]}
+    sequence_length = calibration["sequence_length"]
+    quotas = _domain_token_quotas(calibration)
+    selected_units = []
+    report = {
+        "token_budget": calibration["token_budget"],
+        "sequence_length": sequence_length,
+        "domains": {},
+    }
+    for domain_index, domain in enumerate(calibration["domains"]):
+        candidates = sorted(records_by_domain[domain], key=lambda record: record["id"])
+        random.Random(seed + domain_index).shuffle(candidates)
+        selected = []
+        selected_tokens = 0
+        stats = {
+            "input_records": 0,
+            "document_segments": 0,
+            "skipped_conversations": 0,
+            "skipped_conversation_tokens": 0,
+        }
+        examined_units = 0
+        for record in candidates:
+            units, record_stats = _calibration_units(
+                [record], tokenizer, sequence_length
+            )
+            for key in stats:
+                stats[key] += record_stats[key]
+            examined_units += len(units)
+            for unit in units:
+                selected.append(unit)
+                selected_tokens += len(unit["token_ids"])
+                if selected_tokens >= quotas[domain]:
+                    break
+            if selected_tokens >= quotas[domain]:
+                break
+        achieved_ratio = selected_tokens / quotas[domain]
+        if achieved_ratio < calibration["minimum_achieved_ratio"]:
+            raise ValueError(
+                f"{domain} calibration reached {selected_tokens:,}/{quotas[domain]:,} "
+                f"tokens ({achieved_ratio:.1%}); minimum is "
+                f"{calibration['minimum_achieved_ratio']:.1%}"
+            )
+        report["domains"][domain] = {
+            **stats,
+            "examined_units": examined_units,
+            "quota_tokens": quotas[domain],
+            "selected_units": len(selected),
+            "selected_tokens": selected_tokens,
+            "achieved_ratio": achieved_ratio,
+        }
+        selected_units.extend(selected)
+
+    selected_units.sort(key=lambda unit: unit["id"])
+    random.Random(seed + 10_000).shuffle(selected_units)
+    separator_id = tokenizer.eos_token_id
+    if separator_id is None:
+        raise ValueError("Tokenizer must define eos_token_id for sample packing")
+    pad_id = tokenizer.pad_token_id
+    if pad_id is None:
+        pad_id = separator_id
+    rows, packing = _pack_calibration_units(
+        selected_units, sequence_length, separator_id, pad_id
     )
+    position_offsets = calibration.get("position_offsets")
+    if position_offsets:
+        for index, row in enumerate(rows):
+            offset = position_offsets[index % len(position_offsets)]
+            row["position_ids"] = list(range(offset, offset + sequence_length))
+        packing["position_offsets"] = position_offsets
+    report["packing"] = packing
+    report["selected_tokens"] = sum(
+        domain["selected_tokens"] for domain in report["domains"].values()
+    )
+    report["effective_ratio"] = report["selected_tokens"] / calibration["token_budget"]
+    print(json.dumps(report, indent=2, sort_keys=True))
+    return (
+        datasets.Dataset.from_dict(
+            {key: [row[key] for row in rows] for key in rows[0]}
+        ),
+        report,
+    )
+
+
+def measure_expert_coverage(
+    model: torch.nn.Module,
+    calibration_dir: str | os.PathLike[str],
+    tokenizer,
+    weight_calibration: dict[str, Any],
+    policy: dict[str, Any],
+    *,
+    records_by_domain: dict[str, list[dict[str, Any]]] | None = None,
+) -> dict[str, Any]:
+    from compressed_tensors.utils.match import is_match
+
+    text_config = getattr(model.config, "text_config", model.config)
+    num_experts = getattr(text_config, policy["num_experts_config_key"])
+    top_k = getattr(text_config, policy["top_k_config_key"])
+    routers = {
+        name: module
+        for name, module in model.named_modules()
+        if any(is_match(name, module, pattern) for pattern in policy["router_patterns"])
+    }
+    if not routers:
+        raise ValueError("Expert coverage router patterns matched no modules")
+
+    counts = {
+        name: {domain: None for domain in weight_calibration["domains"]}
+        for name in routers
+    }
+    state: dict[str, Any] = {"domain": None, "mask": None}
+
+    def make_hook(name):
+        def hook(_module, _inputs, output):
+            if state["domain"] is None or state["mask"] is None:
+                raise RuntimeError(f"Router {name} ran without active coverage context")
+            if not isinstance(output, (tuple, list)):
+                raise TypeError(f"Router {name} must return a tuple or list")
+            if policy["output_index"] >= len(output):
+                raise ValueError(
+                    f"Router {name} has no output index {policy['output_index']}"
+                )
+            selected = output[policy["output_index"]]
+            if not isinstance(selected, torch.Tensor) or selected.ndim < 2:
+                raise TypeError(
+                    f"Router {name} selected-expert output must be a tensor"
+                )
+            selected = selected.reshape(-1, selected.shape[-1])
+            if selected.shape[-1] != top_k:
+                raise ValueError(
+                    f"Router {name} returned top-{selected.shape[-1]}, expected {top_k}"
+                )
+            mask = state["mask"].to(selected.device)
+            if selected.shape[0] != mask.numel():
+                raise ValueError(
+                    f"Router {name} returned {selected.shape[0]} token rows for "
+                    f"an attention mask with {mask.numel()} tokens"
+                )
+            selected = selected[mask].reshape(-1).to(dtype=torch.int64)
+            batch_counts = torch.bincount(selected, minlength=num_experts)
+            if batch_counts.shape[0] != num_experts:
+                raise ValueError(f"Router {name} selected an out-of-range expert")
+            domain = state["domain"]
+            if counts[name][domain] is None:
+                counts[name][domain] = batch_counts
+            else:
+                counts[name][domain] += batch_counts
+
+        return hook
+
+    handles = [
+        module.register_forward_hook(make_hook(name))
+        for name, module in routers.items()
+    ]
+    model.eval()
+    input_device = model.get_input_embeddings().weight.device
+    coverage_calibration = {
+        **weight_calibration,
+        "token_budget": policy["token_budget"],
+    }
+    domain_budgets = _domain_token_quotas(coverage_calibration)
+    try:
+        for domain_index, domain in enumerate(weight_calibration["domains"]):
+            domain_budget = domain_budgets[domain]
+            domain_calibration = {
+                **weight_calibration,
+                "domains": [domain],
+                "token_budget": domain_budget,
+                "domain_weights": {domain: 1.0},
+            }
+            dataset, _ = build_calibration_dataset(
+                calibration_dir,
+                tokenizer,
+                domain_calibration,
+                seed=42 + domain_index,
+                records_by_domain=records_by_domain,
+            )
+            state["domain"] = domain
+            for row in dataset:
+                state["mask"] = torch.tensor(
+                    row["attention_mask"], dtype=torch.bool, device=input_device
+                )
+                inputs = {
+                    key: torch.tensor(
+                        value, dtype=torch.long, device=input_device
+                    ).unsqueeze(0)
+                    for key, value in row.items()
+                }
+                try:
+                    with torch.inference_mode():
+                        model(**inputs, use_cache=False)
+                finally:
+                    state["mask"] = None
+            state["domain"] = None
+    finally:
+        state["domain"] = None
+        state["mask"] = None
+        for handle in handles:
+            handle.remove()
+
+    for domain_counts in counts.values():
+        for domain, domain_count in domain_counts.items():
+            domain_counts[domain] = (
+                torch.zeros(num_experts, dtype=torch.int64)
+                if domain_count is None
+                else domain_count.cpu()
+            )
+
+    report = {
+        "policy": policy,
+        "num_experts": num_experts,
+        "top_k": top_k,
+        "layers": {},
+        "domain_assignments": {
+            domain: sum(
+                int(layer_counts[domain].sum()) for layer_counts in counts.values()
+            )
+            for domain in weight_calibration["domains"]
+        },
+    }
+    failures = []
+    for name, domain_counts in counts.items():
+        total = sum(domain_counts.values())
+        sorted_counts = total.sort().values
+        uncovered = int((total == 0).sum())
+        minimum = int(sorted_counts[0])
+        layer_report = {
+            "minimum": minimum,
+            "median": statistics.median(int(count) for count in sorted_counts),
+            "p05": int(sorted_counts[max(0, (num_experts * 5 + 99) // 100 - 1)]),
+            "uncovered": uncovered,
+            "domain_assignments": {
+                domain: int(domain_count.sum())
+                for domain, domain_count in domain_counts.items()
+            },
+        }
+        report["layers"][name] = layer_report
+        if (
+            uncovered > policy["maximum_uncovered_experts"]
+            or minimum < policy["minimum_tokens_per_expert"]
+        ):
+            failures.append(f"{name}: minimum={minimum}, uncovered={uncovered}")
+    rendered_report = json.dumps(report, indent=2, sort_keys=True) + "\n"
+    print(rendered_report, end="")
+    report_path = Path(calibration_dir) / "expert_coverage.json"
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            prefix=".expert_coverage.",
+            suffix=".json",
+            dir=report_path.parent,
+            delete=False,
+        ) as temporary:
+            temporary.write(rendered_report)
+            temporary_path = Path(temporary.name)
+        temporary_path.replace(report_path)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+    if failures:
+        raise ValueError(
+            "Routed-expert coverage did not meet policy:\n  " + "\n  ".join(failures)
+        )
+    return report
 
 
 def validate_awq_mapping_targets(

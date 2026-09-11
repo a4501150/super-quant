@@ -21,7 +21,6 @@ from llmcompressor.modifiers.quantization import QuantizationModifier
 from model_utils import (
     build_awq_modifier,
     build_calibration_dataset,
-    load_calibration_texts,
     load_quantization_model,
     load_quantization_recipe,
     load_quantization_tokenizer,
@@ -92,7 +91,7 @@ def main():
     parser = argparse.ArgumentParser(description="AWQ pre-scaling for GGUF pipeline")
     parser.add_argument("--config", required=True, help="Per-model quantize.json")
     parser.add_argument(
-        "--calibration-dir", required=True, help="Calibration text directory"
+        "--calibration-dir", required=True, help="Structured calibration directory"
     )
     parser.add_argument(
         "--output-dir", required=True, help="Output checkpoint directory"
@@ -105,21 +104,14 @@ def main():
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     tokenizer = load_quantization_tokenizer(recipe)
-    print("=== Loading calibration data ===")
-    samples = load_calibration_texts(args.calibration_dir, calibration["domains"])
-    print(f"Total samples: {len(samples)}")
-
+    print("=== Loading and packing structured calibration data ===")
+    dataset, calibration_report = build_calibration_dataset(
+        args.calibration_dir, tokenizer, calibration
+    )
     print(
-        f"\n=== Tokenizing {calibration['num_samples']} samples "
-        f"(max {calibration['max_length']} tokens) ==="
+        f"Packed {calibration_report['selected_tokens']:,} effective tokens into "
+        f"{len(dataset):,} sequences"
     )
-    dataset = build_calibration_dataset(
-        samples,
-        tokenizer,
-        calibration["num_samples"],
-        calibration["max_length"],
-    )
-    print(f"Tokenized: {len(dataset)} samples")
 
     print(f"\n=== Loading model: {recipe['source']['model_id']} ===")
     model = load_quantization_model(recipe)
@@ -142,7 +134,7 @@ def main():
         dataset=dataset,
         data_collator="truncation",
         batch_size=1,
-        max_seq_length=calibration["max_length"],
+        max_seq_length=calibration["sequence_length"],
         num_calibration_samples=len(dataset),
         shuffle_calibration_samples=False,
         pipeline="independent",
