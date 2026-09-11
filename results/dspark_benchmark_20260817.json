@@ -1,0 +1,42 @@
+{
+  "date": "2026-08-17",
+  "target_model": "Qwen3.8-27B-AEON-UD-Q8_0.gguf",
+  "target_size_gb": 34.7,
+  "draft_model": "Qwen3.8-27B-DSpark-BF16.gguf",
+  "draft_source": "erlidev/Qwen3.8-27B-DSpark-GGUF",
+  "draft_size_gb": 2.6,
+  "spec_type": "draft-dspark",
+  "block_size": 7,
+  "gpu": "NVIDIA RTX PRO 6000 Blackwell (96 GB VRAM)",
+  "context": 8192,
+  "parallel": 1,
+  "sampling": {
+    "temperature": 0.6,
+    "top_k": 20,
+    "top_p": 0.95,
+    "reasoning_effort": "medium"
+  },
+  "results": {
+    "baseline": {
+      "code":      {"tg_speed": 44.4, "comp_tokens": 1268},
+      "math":      {"tg_speed": 44.7, "comp_tokens": 2048},
+      "reasoning": {"tg_speed": 44.4, "comp_tokens": 1151},
+      "creative":  {"tg_speed": 44.5, "comp_tokens": 1649},
+      "agentic":   {"tg_speed": 44.6, "comp_tokens": 1005}
+    },
+    "mtp_n3": {
+      "code":      {"tg_speed": 84.6, "comp_tokens": 1191},
+      "math":      {"tg_speed": 103.3, "comp_tokens": 2048},
+      "reasoning": {"tg_speed": 91.0, "comp_tokens": 1125},
+      "creative":  {"tg_speed": 60.4, "comp_tokens": 1925},
+      "agentic":   {"tg_speed": 92.3, "comp_tokens": 1661}
+    },
+    "dspark_n7": {
+      "code":      {"tg_speed": 84.3, "comp_tokens": 1488, "acceptance": 0.312, "mean_len": 3.18},
+      "math":      {"tg_speed": 134.0, "comp_tokens": 2048, "acceptance": 0.581, "mean_len": 5.07},
+      "reasoning": {"tg_speed": 97.0, "comp_tokens": 1114, "acceptance": 0.388, "mean_len": 3.72},
+      "creative":  {"tg_speed": 52.0, "comp_tokens": 2048, "acceptance": 0.136, "mean_len": 1.95},
+      "agentic":   {"tg_speed": 80.4, "comp_tokens": 1068, "acceptance": 0.297, "mean_len": 3.08}
+    }
+  }
+}
