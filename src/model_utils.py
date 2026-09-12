@@ -1200,10 +1200,13 @@ def _reduce_expert_coverage_across_ranks(local_counts):
     group = torch.distributed.new_group(
         backend="gloo", timeout=timedelta(hours=8)
     )
-    gathered = [None] * world_size
+    rank = torch.distributed.get_rank()
+    # torch.distributed.gather_object rejects a non-None output list on
+    # non-destination ranks.
+    gathered = [None] * world_size if rank == 0 else None
     torch.distributed.gather_object(local_counts, gathered, dst=0, group=group)
     merged = None
-    if torch.distributed.get_rank() == 0:
+    if rank == 0:
         merged = {
             name: {
                 domain: sum(entry[name][domain] for entry in gathered)
