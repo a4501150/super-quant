@@ -400,6 +400,61 @@ class CalibrationPackingTest(unittest.TestCase):
             json.loads((self.path / "expert_coverage.json").read_text()), report
         )
 
+    def test_coverage_checkpoint_skips_completed_domains(self):
+        self.write_domain(
+            "general",
+            [self.make_record("coverage", "general", text="r" * 96)],
+        )
+        calibration = {
+            "domains": ["general"],
+            "token_budget": 64,
+            "sequence_length": 32,
+            "domain_weights": {"general": 1.0},
+            "minimum_achieved_ratio": 1.0,
+        }
+        policy = {
+            "router_patterns": ["re:.*mlp\\.gate$"],
+            "output_index": 2,
+            "num_experts_config_key": "num_experts",
+            "top_k_config_key": "num_experts_per_tok",
+            "token_budget": 64,
+            "minimum_tokens_per_expert": 1,
+            "maximum_uncovered_experts": 0,
+        }
+        checkpoint = self.path / "coverage_partial.json"
+        phases = []
+        first = model_utils.measure_expert_coverage(
+            MockRoutedModel(),
+            self.path,
+            self.tokenizer,
+            calibration,
+            policy,
+            checkpoint_path=checkpoint,
+            on_domain_complete=phases.append,
+        )
+        self.assertEqual(phases, ["coverage:general"])
+        checkpoint_report = json.loads(checkpoint.read_text())
+        self.assertEqual(checkpoint_report["token_budget"], 64)
+        self.assertEqual(
+            set(checkpoint_report["domains"]["general"]),
+            set(first["layers"]),
+        )
+        with mock.patch.object(
+            model_utils,
+            "build_calibration_dataset",
+            wraps=model_utils.build_calibration_dataset,
+        ) as builder:
+            second = model_utils.measure_expert_coverage(
+                MockRoutedModel(),
+                self.path,
+                self.tokenizer,
+                calibration,
+                policy,
+                checkpoint_path=checkpoint,
+            )
+        builder.assert_not_called()
+        self.assertEqual(first, second)
+
     def test_coverage_reduction_uses_gloo_group_with_long_timeout(self):
         import torch.distributed as distributed
         from datetime import timedelta

@@ -1227,7 +1227,16 @@ def measure_expert_coverage(
     policy: dict[str, Any],
     *,
     records_by_domain: dict[str, list[dict[str, Any]]] | None = None,
+    checkpoint_path: str | os.PathLike[str] | None = None,
+    on_domain_complete=None,
 ) -> dict[str, Any]:
+    """Measure routed-expert coverage, one calibration domain at a time.
+
+    With ``checkpoint_path`` set, merged per-domain counts are rewritten
+    after each domain and domains already present there are skipped, so a
+    crash redoes only the in-flight domain. ``on_domain_complete`` is called
+    on every rank after each domain so callers can checkpoint phase state.
+    """
     from compressed_tensors.offload import set_onload_device
     from compressed_tensors.utils.match import is_match
     from llmcompressor.utils import get_main_device
@@ -1299,8 +1308,23 @@ def measure_expert_coverage(
         "token_budget": policy["token_budget"],
     }
     domain_budgets = _domain_token_quotas(coverage_calibration)
+    distributed = (
+        torch.distributed.is_available() and torch.distributed.is_initialized()
+    )
+    rank = torch.distributed.get_rank() if distributed else 0
+    partial: dict[str, Any] = {"token_budget": policy["token_budget"], "domains": {}}
+    if checkpoint_path is not None and Path(checkpoint_path).is_file():
+        loaded = json.loads(Path(checkpoint_path).read_text(encoding="utf-8"))
+        if loaded.get("token_budget") == policy["token_budget"]:
+            partial = loaded
     try:
         for domain_index, domain in enumerate(weight_calibration["domains"]):
+            if domain in partial["domains"]:
+                print(
+                    f"[rank {rank}] coverage domain={domain} restored from checkpoint",
+                    flush=True,
+                )
+                continue
             domain_budget = domain_budgets[domain]
             domain_calibration = {
                 **weight_calibration,
@@ -1319,12 +1343,6 @@ def measure_expert_coverage(
             # ranks; a rank then contributes no coverage rows for it.
             dataset = distributed_dataset_partition(dataset, allow_empty=True)
             state["domain"] = domain
-            rank = (
-                torch.distributed.get_rank()
-                if torch.distributed.is_available()
-                and torch.distributed.is_initialized()
-                else 0
-            )
             for sequence_index, row in enumerate(dataset, start=1):
                 state["mask"] = torch.tensor(
                     row["attention_mask"], dtype=torch.bool, device=input_device
@@ -1346,53 +1364,73 @@ def measure_expert_coverage(
                     flush=True,
                 )
             state["domain"] = None
+            local_domain = {
+                name: {
+                    domain: domain_counts[domain].cpu()
+                    if domain_counts[domain] is not None
+                    else torch.zeros(num_experts, dtype=torch.int64)
+                }
+                for name, domain_counts in counts.items()
+            }
+            if distributed:
+                local_domain = _reduce_expert_coverage_across_ranks(local_domain)
+            partial["domains"][domain] = {
+                name: domain_counts[domain].tolist()
+                for name, domain_counts in local_domain.items()
+            }
+            if checkpoint_path is not None and rank == 0:
+                path = Path(checkpoint_path)
+                temporary_path = path.with_name(path.name + ".tmp")
+                temporary_path.write_text(
+                    json.dumps(partial, indent=2, sort_keys=True) + "\n",
+                    encoding="utf-8",
+                )
+                temporary_path.replace(path)
+            if on_domain_complete is not None:
+                on_domain_complete(f"coverage:{domain}")
     finally:
         state["domain"] = None
         state["mask"] = None
         for handle in handles:
             handle.remove()
 
-    distributed = (
-        torch.distributed.is_available() and torch.distributed.is_initialized()
-    )
-    counts = {
-        name: {
-            domain: domain_count.cpu()
-            if domain_count is not None
-            else torch.zeros(num_experts, dtype=torch.int64)
-            for domain, domain_count in domain_counts.items()
+    per_domain = {
+        domain: {
+            name: partial["domains"].get(domain, {}).get(name, [0] * num_experts)
+            for name in counts
         }
-        for name, domain_counts in counts.items()
+        for domain in weight_calibration["domains"]
     }
-    if distributed:
-        counts = _reduce_expert_coverage_across_ranks(counts)
-
     report = {
         "policy": policy,
         "num_experts": num_experts,
         "top_k": top_k,
         "layers": {},
         "domain_assignments": {
-            domain: sum(
-                int(layer_counts[domain].sum()) for layer_counts in counts.values()
-            )
+            domain: sum(sum(values) for values in per_domain[domain].values())
             for domain in weight_calibration["domains"]
         },
     }
     failures = []
-    for name, domain_counts in counts.items():
-        total = sum(domain_counts.values())
-        sorted_counts = total.sort().values
-        uncovered = int((total == 0).sum())
-        minimum = int(sorted_counts[0])
+    for name in counts:
+        total = [
+            sum(
+                per_domain[domain][name][index]
+                for domain in weight_calibration["domains"]
+            )
+            for index in range(num_experts)
+        ]
+        sorted_counts = sorted(total)
+        uncovered = sum(1 for count in total if count == 0)
+        minimum = sorted_counts[0]
         layer_report = {
             "minimum": minimum,
-            "median": statistics.median(int(count) for count in sorted_counts),
-            "p05": int(sorted_counts[max(0, (num_experts * 5 + 99) // 100 - 1)]),
+            "median": statistics.median(sorted_counts),
+            "p05": sorted_counts[max(0, (num_experts * 5 + 99) // 100 - 1)],
             "uncovered": uncovered,
             "domain_assignments": {
-                domain: int(domain_count.sum())
-                for domain, domain_count in domain_counts.items()
+                domain: sum(per_domain[domain][name])
+                for domain in weight_calibration["domains"]
             },
         }
         report["layers"][name] = layer_report
@@ -1402,7 +1440,6 @@ def measure_expert_coverage(
         ):
             failures.append(f"{name}: minimum={minimum}, uncovered={uncovered}")
     rendered_report = json.dumps(report, indent=2, sort_keys=True) + "\n"
-    rank = torch.distributed.get_rank() if distributed else 0
     if rank == 0:
         print(rendered_report, end="")
         report_path = Path(calibration_dir) / "expert_coverage.json"

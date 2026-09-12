@@ -424,6 +424,10 @@ def main():
                             weight_calibration,
                             coverage,
                             records_by_domain=records_by_domain,
+                            checkpoint_path=(
+                                output_dir / "coverage_partial.json"
+                            ),
+                            on_domain_complete=mark_phase_complete,
                         )
                     mark_phase_complete("expert_coverage")
 
