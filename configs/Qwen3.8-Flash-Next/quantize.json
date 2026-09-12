@@ -161,8 +161,8 @@
       "num_experts_config_key": "num_experts",
       "top_k_config_key": "num_experts_per_tok",
       "token_budget": 131072,
-      "minimum_tokens_per_expert": 32,
-      "maximum_uncovered_experts": 0
+      "minimum_tokens_per_expert": 0,
+      "maximum_uncovered_experts": 8
     }
   }
 }
