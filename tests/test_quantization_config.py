@@ -888,7 +888,7 @@ class ParallelOnloadTest(unittest.TestCase):
 
         module.forward = forward
         wrapped = model_utils.enable_parallel_onload(
-            SimpleNamespace(modules=lambda: iter([module])), workers=3
+            torch.nn.ModuleList([module]), workers=3
         )
         self.assertEqual(wrapped, 1)
         self.assertEqual(module.forward(), "ok")
@@ -914,7 +914,7 @@ class ParallelOnloadTest(unittest.TestCase):
             )
         )
         model_utils.enable_parallel_onload(
-            SimpleNamespace(modules=lambda: iter([module])), workers=2
+            torch.nn.ModuleList([module]), workers=2
         )
         with OffloadCache.disable_offloading():
             module.forward()
@@ -923,6 +923,39 @@ class ParallelOnloadTest(unittest.TestCase):
             for value in cache.offloaded_values.values():
                 self.assertIn(value, OffloadCache.keep_onloaded_values)
         self.assertEqual(OffloadCache.keep_onloaded_values, {})
+
+    def test_subtree_batch_covers_nested_offloaded_modules(self):
+        from compressed_tensors.offload.cache import OffloadCache
+
+        parent_cache = self._fake_cache(["bias"], lambda o: torch.ones(1))
+        child_cache = self._fake_cache(["weight"], lambda o: torch.zeros(1))
+        parent = torch.nn.Module()
+        parent._parameters = parent_cache
+        parent._buffers = {}
+        child = torch.nn.Module()
+        child._parameters = child_cache
+        child._buffers = {}
+        parent.add_module("child", child)
+        both_warm = []
+
+        def parent_forward():
+            both_warm.append(
+                parent_cache.offloaded_values["bias"]
+                in OffloadCache.keep_onloaded_values
+                and child_cache.offloaded_values["weight"]
+                in OffloadCache.keep_onloaded_values
+            )
+
+        parent.forward = parent_forward
+        wrapped = model_utils.enable_parallel_onload(
+            torch.nn.ModuleList([parent]), workers=2
+        )
+        # Only the topmost offloaded module is wrapped; the nested child's
+        # weight must still arrive in the parent's single concurrent batch.
+        self.assertEqual(wrapped, 1)
+        self.assertNotIn("forward", vars(child))
+        parent.forward()
+        self.assertTrue(both_warm[0])
 
 
 class QuantizationTargetTest(unittest.TestCase):

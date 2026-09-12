@@ -335,6 +335,13 @@ def load_quantization_recipe(path: str | os.PathLike[str]) -> dict[str, Any]:
             },
             optional={"parallel_onload_workers"},
         )
+        if runtime.get("parallel_onload_workers") == "auto":
+            world_size = int(os.environ.get("WORLD_SIZE", "1"))
+            # Two threads per rank per usable core-pair, capped so 8 ranks
+            # never spawn more copy threads than the node has cores at all.
+            runtime["parallel_onload_workers"] = max(
+                2, min(16, (os.cpu_count() or 8) // (2 * world_size))
+            )
         for key in (
             "batch_size",
             "dataloader_num_workers",
@@ -1077,13 +1084,19 @@ def _wrap_forward_with_prefetch(forward_fn, caches):
 
 
 def enable_parallel_onload(model, workers: int) -> int:
-    """Prefetch each offloaded module's parameters concurrently before forward.
+    """Prefetch each offloaded subtree's parameters concurrently before forward.
 
     compressed-tensors onloads lazily per parameter access on the calling
     thread, so an experts forward copies its weights serially and every rank
     saturates exactly one core while GPUs wait. ``onload`` on the disk and
     CPU caches is a pure read with its own file handle and no collectives, so
     entries are safe to fetch from a shared thread pool.
+
+    Only the topmost offloaded module per branch is wrapped, and its batch
+    covers every cache in the subtree: leaf Linear caches hold one weight
+    each, so per-module batching has nothing to parallelize. A wrapped layer
+    warms all descendant weights in one concurrent burst; nested forwards
+    then hit the keep-onloaded cache.
     """
     global _onload_pool
     from concurrent.futures import ThreadPoolExecutor
@@ -1095,16 +1108,32 @@ def enable_parallel_onload(model, workers: int) -> int:
             _onload_pool.shutdown(wait=True)
         _onload_pool = ThreadPoolExecutor(max_workers=workers)
 
-    wrapped = 0
-    for module in model.modules():
-        caches = [
+    def caches_of(module):
+        return [
             cache
             for cache in (module._parameters, module._buffers)
             if isinstance(cache, OffloadCache)
         ]
+
+    wrapped = 0
+
+    def visit(module):
+        nonlocal wrapped
+        caches = caches_of(module)
         if caches:
-            module.forward = _wrap_forward_with_prefetch(module.forward, caches)
+            subtree_caches = list(caches)
+            for descendant in module.modules():
+                if descendant is not module:
+                    subtree_caches.extend(caches_of(descendant))
+            module.forward = _wrap_forward_with_prefetch(
+                module.forward, subtree_caches
+            )
             wrapped += 1
+        else:
+            for child in module.children():
+                visit(child)
+
+    visit(model)
     return wrapped
 
 

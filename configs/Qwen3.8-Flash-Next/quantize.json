@@ -13,7 +13,7 @@
     "sequential_targets_per_subgraph": 16,
     "sequential_prefetch": true,
     "enable_compile": true,
-    "parallel_onload_workers": 4
+    "parallel_onload_workers": "auto"
   },
   "awq_prescale": {
     "calibration": {
