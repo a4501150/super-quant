@@ -840,6 +840,91 @@ class QuantizationExecutionTest(unittest.TestCase):
         self.assertEqual(model.save_pretrained.call_count, 2)
 
 
+class ParallelOnloadTest(unittest.TestCase):
+    def _fake_cache(self, names, onload):
+        from compressed_tensors.offload.cache import OffloadCache
+
+        class FakeCache(OffloadCache):
+            def onload(self, offloaded):
+                return onload(offloaded)
+
+            def offload(self, tensor):
+                return tensor
+
+            def update_offload(self, offloaded, data):
+                pass
+
+        cache = FakeCache(torch.device("cpu"), torch.device("cpu"))
+        cache.offloaded_values = {name: object() for name in names}
+        return cache
+
+    def test_forwards_prefetch_parameters_in_parallel_then_cleanup(self):
+        import threading
+
+        from compressed_tensors.offload.cache import OffloadCache
+
+        barrier = threading.Barrier(3, timeout=5)
+        onload_threads = []
+
+        def onload(offloaded):
+            onload_threads.append(threading.current_thread())
+            barrier.wait()
+            return torch.ones(1)
+
+        cache = self._fake_cache(["gate", "up", "down"], onload)
+        module = torch.nn.Module()
+        module._parameters = cache
+        module._buffers = {}
+        seen_in_forward = []
+
+        def forward():
+            seen_in_forward.append(
+                all(
+                    value in OffloadCache.keep_onloaded_values
+                    for value in cache.offloaded_values.values()
+                )
+            )
+            return "ok"
+
+        module.forward = forward
+        wrapped = model_utils.enable_parallel_onload(
+            SimpleNamespace(modules=lambda: iter([module])), workers=3
+        )
+        self.assertEqual(wrapped, 1)
+        self.assertEqual(module.forward(), "ok")
+        # All three onloads overlapped: the barrier only passes concurrently.
+        self.assertGreater(len(set(onload_threads)), 1)
+        self.assertTrue(seen_in_forward[0])
+        # Entries must not outlive the forward outside the keep-resident phase.
+        for value in cache.offloaded_values.values():
+            self.assertNotIn(value, OffloadCache.keep_onloaded_values)
+
+    def test_keep_resident_phase_retains_prefetched_entries(self):
+        from compressed_tensors.offload.cache import OffloadCache
+
+        cache = self._fake_cache(["weight"], lambda offloaded: torch.zeros(1))
+        module = torch.nn.Module()
+        module._parameters = cache
+        module._buffers = {}
+        inside = []
+        module.forward = lambda: inside.append(
+            all(
+                value in OffloadCache.keep_onloaded_values
+                for value in cache.offloaded_values.values()
+            )
+        )
+        model_utils.enable_parallel_onload(
+            SimpleNamespace(modules=lambda: iter([module])), workers=2
+        )
+        with OffloadCache.disable_offloading():
+            module.forward()
+            self.assertTrue(inside[0])
+            # The pipeline's context owns the cache lifetime; entries survive.
+            for value in cache.offloaded_values.values():
+                self.assertIn(value, OffloadCache.keep_onloaded_values)
+        self.assertEqual(OffloadCache.keep_onloaded_values, {})
+
+
 class QuantizationTargetTest(unittest.TestCase):
     def test_target_counts_are_reported(self):
         groups = [

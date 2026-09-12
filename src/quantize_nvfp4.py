@@ -24,6 +24,7 @@ from model_utils import (
     build_awq_modifier,
     build_calibration_dataset,
     distributed_dataset_partition,
+    enable_parallel_onload,
     keep_ple_lookup_tables_on_cpu,
     load_calibration_records,
     load_quantization_model,
@@ -398,6 +399,13 @@ def main():
         )
         for group_name, count in counts.items():
             print_primary(f"Matched {group_name} modules: {count}")
+        onload_workers = runtime.get("parallel_onload_workers", 0)
+        if onload_workers > 0:
+            wrapped = enable_parallel_onload(model, workers=onload_workers)
+            print_primary(
+                f"Parallel onload active on {wrapped} modules "
+                f"({onload_workers} worker threads per rank)"
+            )
 
         timings = []
         telemetry_path = output_dir / "gpu_telemetry.jsonl"

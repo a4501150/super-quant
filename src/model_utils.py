@@ -333,14 +333,17 @@ def load_quantization_recipe(path: str | os.PathLike[str]) -> dict[str, Any]:
                 "sequential_prefetch",
                 "enable_compile",
             },
+            optional={"parallel_onload_workers"},
         )
         for key in (
             "batch_size",
             "dataloader_num_workers",
             "sequential_targets_per_subgraph",
+            "parallel_onload_workers",
         ):
-            if type(runtime[key]) is not int or runtime[key] < (
-                0 if key == "dataloader_num_workers" else 1
+            minimum = 1 if key in ("batch_size", "sequential_targets_per_subgraph") else 0
+            if key in runtime and (
+                type(runtime[key]) is not int or runtime[key] < minimum
             ):
                 raise ValueError(f"recipe.runtime.{key} has an invalid value")
         for key in ("sequential_prefetch", "enable_compile"):
@@ -1029,6 +1032,80 @@ def distributed_dataset_partition(dataset, allow_empty=False):
             f"Calibration dataset has {rows} rows for {world_size} ranks"
         )
     return dataset.select(range(start, end))
+
+
+_onload_pool = None
+
+
+def _wrap_forward_with_prefetch(forward_fn, caches):
+    import functools
+
+    from compressed_tensors.offload.cache import OffloadCache
+
+    @functools.wraps(forward_fn)
+    def prefetching_forward(*args, **kwargs):
+        # Tracing inspects offloaded tensors without moving them; skip prefetch
+        # whenever onloading is disabled (access would return meta tensors anyway).
+        if OffloadCache.onloading_disabled:
+            return forward_fn(*args, **kwargs)
+        added = []
+        futures = []
+        for cache in caches:
+            for offloaded in cache.offloaded_values.values():
+                if (
+                    offloaded is None
+                    or offloaded in OffloadCache.keep_onloaded_values
+                ):
+                    continue
+                futures.append(_onload_pool.submit(cache.onload, offloaded))
+                added.append(offloaded)
+        for offloaded, future in zip(added, futures):
+            OffloadCache.keep_onloaded_values[offloaded] = future.result()
+        try:
+            return forward_fn(*args, **kwargs)
+        finally:
+            # Outside the pipeline's keep-resident phase, the onloaded entries
+            # must not outlive the forward or VRAM grows every call.
+            if not OffloadCache.offloading_disabled:
+                for offloaded in added:
+                    OffloadCache.keep_onloaded_values.pop(offloaded, None)
+
+    # compressed-tensors' unwrap_offload_forward re-reads forward through
+    # ``__func__``; a bare function would crash it during quantization.
+    prefetching_forward.__func__ = prefetching_forward
+    return prefetching_forward
+
+
+def enable_parallel_onload(model, workers: int) -> int:
+    """Prefetch each offloaded module's parameters concurrently before forward.
+
+    compressed-tensors onloads lazily per parameter access on the calling
+    thread, so an experts forward copies its weights serially and every rank
+    saturates exactly one core while GPUs wait. ``onload`` on the disk and
+    CPU caches is a pure read with its own file handle and no collectives, so
+    entries are safe to fetch from a shared thread pool.
+    """
+    global _onload_pool
+    from concurrent.futures import ThreadPoolExecutor
+
+    from compressed_tensors.offload.cache import OffloadCache
+
+    if _onload_pool is None or _onload_pool._max_workers < workers:
+        if _onload_pool is not None:
+            _onload_pool.shutdown(wait=True)
+        _onload_pool = ThreadPoolExecutor(max_workers=workers)
+
+    wrapped = 0
+    for module in model.modules():
+        caches = [
+            cache
+            for cache in (module._parameters, module._buffers)
+            if isinstance(cache, OffloadCache)
+        ]
+        if caches:
+            module.forward = _wrap_forward_with_prefetch(module.forward, caches)
+            wrapped += 1
+    return wrapped
 
 
 def _pin_ple_lookup_tables_to_cpu(model):
