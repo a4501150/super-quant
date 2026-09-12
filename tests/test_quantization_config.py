@@ -822,6 +822,14 @@ class QuantizationExecutionTest(unittest.TestCase):
         with (
             tempfile.TemporaryDirectory() as output_dir,
             mock.patch.object(
+                quantize_nvfp4, "_pin_ple_lookup_tables_to_cpu"
+            ),
+            mock.patch("compressed_tensors.offload.set_onload_device"),
+            mock.patch(
+                "llmcompressor.utils.get_main_device",
+                return_value=torch.device("cpu"),
+            ),
+            mock.patch.object(
                 sys,
                 "argv",
                 [

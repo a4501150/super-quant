@@ -1055,6 +1055,12 @@ def _wrap_forward_with_prefetch(forward_fn, caches):
         # whenever onloading is disabled (access would return meta tensors anyway).
         if OffloadCache.onloading_disabled:
             return forward_fn(*args, **kwargs)
+        if any(
+            isinstance(arg, torch.fx.Proxy) for arg in (*args, *kwargs.values())
+        ):
+            # fx.symbolic_trace calls wrapped forwards with Proxy arguments;
+            # onloading real weights then races subgraph device placement.
+            return forward_fn(*args, **kwargs)
         added = []
         futures = []
         for cache in caches:

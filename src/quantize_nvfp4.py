@@ -21,6 +21,7 @@ from llmcompressor.modifiers.gptq import GPTQModifier
 from llmcompressor.modifiers.quantization import QuantizationModifier
 
 from model_utils import (
+    _pin_ple_lookup_tables_to_cpu,
     build_awq_modifier,
     build_calibration_dataset,
     distributed_dataset_partition,
@@ -406,6 +407,17 @@ def main():
                 f"Parallel onload active on {wrapped} modules "
                 f"({onload_workers} worker threads per rank)"
             )
+
+        # Dispatch leaves caches on cpu; the sequential pipeline only fixes
+        # devices per subgraph, and trace_subgraphs touches model.device
+        # before any subgraph runs. Promote once here so every entry path
+        # (fresh, coverage-skipped resume) starts CUDA-placed; PLE tables
+        # stay pinned in host RAM.
+        from compressed_tensors.offload import set_onload_device
+        from llmcompressor.utils import get_main_device
+
+        set_onload_device(model, get_main_device())
+        _pin_ple_lookup_tables_to_cpu(model)
 
         timings = []
         telemetry_path = output_dir / "gpu_telemetry.jsonl"
