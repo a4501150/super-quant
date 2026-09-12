@@ -4,14 +4,17 @@ Shared model loading and tensor mapping utilities.
 Used by generate_imatrix.py and sensitivity_analysis.py.
 """
 
+import contextlib
 import glob
 import json
+import math
 import os
 import random
 import re
 import statistics
 import sys
 import tempfile
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -300,6 +303,7 @@ def load_quantization_recipe(path: str | os.PathLike[str]) -> dict[str, Any]:
         recipe,
         "recipe",
         required={"source", "save", "awq_prescale", "nvfp4"},
+        optional={"runtime"},
     )
     source = _validate_object(
         root["source"],
@@ -317,6 +321,31 @@ def load_quantization_recipe(path: str | os.PathLike[str]) -> dict[str, Any]:
     save = _validate_object(root["save"], "recipe.save", required={"shard_size"})
     if not isinstance(save["shard_size"], str) or not save["shard_size"]:
         raise ValueError("recipe.save.shard_size must be a non-empty string")
+
+    if "runtime" in root:
+        runtime = _validate_object(
+            root["runtime"],
+            "recipe.runtime",
+            required={
+                "batch_size",
+                "dataloader_num_workers",
+                "sequential_targets_per_subgraph",
+                "sequential_prefetch",
+                "enable_compile",
+            },
+        )
+        for key in (
+            "batch_size",
+            "dataloader_num_workers",
+            "sequential_targets_per_subgraph",
+        ):
+            if type(runtime[key]) is not int or runtime[key] < (
+                0 if key == "dataloader_num_workers" else 1
+            ):
+                raise ValueError(f"recipe.runtime.{key} has an invalid value")
+        for key in ("sequential_prefetch", "enable_compile"):
+            if not isinstance(runtime[key], bool):
+                raise TypeError(f"recipe.runtime.{key} must be a boolean")
 
     awq = _validate_object(
         root["awq_prescale"],
@@ -455,7 +484,9 @@ def get_quantization_model_class(recipe: dict[str, Any]):
     return QUANTIZATION_TASKS[recipe["source"]["task"]]
 
 
-def inspect_source_config(recipe: dict[str, Any]) -> dict[str, Any]:
+def inspect_source_config(
+    recipe: dict[str, Any], allow_quantized: bool = False
+) -> dict[str, Any]:
     source = recipe["source"]
     config, _ = PretrainedConfig.get_config_dict(
         source["model_id"], trust_remote_code=source["trust_remote_code"]
@@ -465,7 +496,7 @@ def inspect_source_config(recipe: dict[str, Any]) -> dict[str, Any]:
         configs.append(("text_config", config["text_config"]))
     for config_name, model_config in configs:
         quantization = model_config.get("quantization_config")
-        if quantization:
+        if quantization and not allow_quantized:
             method = quantization.get("quant_method", "unknown")
             status = quantization.get("quantization_status", "configured")
             raise ValueError(
@@ -476,20 +507,174 @@ def inspect_source_config(recipe: dict[str, Any]) -> dict[str, Any]:
     return config
 
 
-def load_quantization_model(recipe: dict[str, Any]) -> torch.nn.Module:
+def streaming_linearize_moe(model):
+    import gc
+
+    import tqdm
+    from llmcompressor.modeling.moe import linearize
+    from llmcompressor.modeling.moe.linear_experts import LinearExperts2D
+
+    names = [name for name, _module in linearize.get_non_linearized_moes(model)]
+    for name in tqdm.tqdm(names, desc="Streaming linearize experts"):
+        module = model.get_submodule(name)
+        config = getattr(module, "config", model.config)
+        linear_experts_class = LinearExperts2D.get_linear_experts_cls(
+            module.__class__
+        )
+        linear_experts = linear_experts_class.from_experts_module(module, config)
+        model.set_submodule(name, linear_experts)
+        del module, linear_experts
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    return model
+
+
+@contextlib.contextmanager
+def use_streaming_moe_linearization():
+    import llmcompressor.modeling.moe.linearize as linearize
+
+    original_linearize_moe = linearize.linearize_moe
+    linearize.linearize_moe = streaming_linearize_moe
+    try:
+        yield
+    finally:
+        linearize.linearize_moe = original_linearize_moe
+
+
+@contextlib.contextmanager
+def qwen4_exp_linearized_load_mapping(source_config):
+    if not source_config.get("super_quant_linearized_moe", False):
+        yield
+        return
+    if source_config.get("model_type") != "qwen4_exp":
+        raise ValueError(
+            "super_quant_linearized_moe is only supported for qwen4_exp"
+        )
+
+    from llmcompressor.modeling.moe import conversion_mappings
+    from transformers.core_model_loading import WeightRenaming
+
+    model_type = "qwen4_exp"
+    import_paths = (
+        "transformers.models.qwen4_exp.configuration_qwen4_exp.Qwen4ExpTextConfig",
+        "transformers.models.qwen4_exp.modeling_qwen4_exp.Qwen4ExpTextExperts",
+    )
+    mappings = (
+        [],
+        [
+            WeightRenaming(
+                source_patterns=r"\.experts\.(\d+)\.gate_proj\.",
+                target_patterns=r".experts.\1.gate_proj.",
+            ),
+            WeightRenaming(
+                source_patterns=r"\.experts\.(\d+)\.up_proj\.",
+                target_patterns=r".experts.\1.up_proj.",
+            ),
+            WeightRenaming(
+                source_patterns=r"\.experts\.(\d+)\.down_proj\.",
+                target_patterns=r".experts.\1.down_proj.",
+            ),
+        ],
+    )
+    old_import_paths = conversion_mappings.ARCH_TO_IMPORT_PATHS.get(model_type)
+    old_mappings = conversion_mappings.ARCH_TO_2D_MAPPINGS.get(model_type)
+    original_get_mapping = conversion_mappings.get_checkpoint_conversion_mapping
+
+    def get_checkpoint_conversion_mapping(model_type):
+        return original_get_mapping(model_type) or []
+
+    conversion_mappings.ARCH_TO_IMPORT_PATHS[model_type] = import_paths
+    conversion_mappings.ARCH_TO_2D_MAPPINGS[model_type] = mappings
+    conversion_mappings.get_checkpoint_conversion_mapping = (
+        get_checkpoint_conversion_mapping
+    )
+    try:
+        yield
+    finally:
+        conversion_mappings.get_checkpoint_conversion_mapping = original_get_mapping
+        if old_import_paths is None:
+            conversion_mappings.ARCH_TO_IMPORT_PATHS.pop(model_type, None)
+        else:
+            conversion_mappings.ARCH_TO_IMPORT_PATHS[model_type] = old_import_paths
+        if old_mappings is None:
+            conversion_mappings.ARCH_TO_2D_MAPPINGS.pop(model_type, None)
+        else:
+            conversion_mappings.ARCH_TO_2D_MAPPINGS[model_type] = old_mappings
+
+
+@contextlib.contextmanager
+def preserve_meta_device_map_for_non_source_rank():
+    distributed = (
+        torch.distributed.is_available() and torch.distributed.is_initialized()
+    )
+    if not distributed or torch.distributed.get_rank() == 0:
+        yield
+        return
+
+    import transformers.core_model_loading as core_model_loading
+    import transformers.modeling_utils as modeling_utils
+    from safetensors.torch import _getdtype
+
+    original_get_device_map = modeling_utils._get_device_map
+    original_materialize_copy = core_model_loading._materialize_copy
+
+    def get_device_map(model, device_map, max_memory, hf_quantizer):
+        if device_map == "meta":
+            return {"": torch.device("meta")}
+        return original_get_device_map(model, device_map, max_memory, hf_quantizer)
+
+    def materialize_copy_on_meta(tensor, device=None, dtype=None):
+        shape = getattr(tensor, "shape", None)
+        if shape is None:
+            shape = torch.Size(tensor.get_shape())
+        tensor_dtype = getattr(tensor, "dtype", None)
+        if not isinstance(tensor_dtype, torch.dtype):
+            tensor_dtype = _getdtype(tensor.get_dtype())
+        return torch.empty(shape, dtype=dtype or tensor_dtype, device="meta")
+
+    modeling_utils._get_device_map = get_device_map
+    core_model_loading._materialize_copy = materialize_copy_on_meta
+    try:
+        yield
+    finally:
+        core_model_loading._materialize_copy = original_materialize_copy
+        modeling_utils._get_device_map = original_get_device_map
+
+
+def load_quantization_model(
+    recipe: dict[str, Any],
+    offload_dir: str | os.PathLike[str] | None = None,
+    allow_quantized: bool = False,
+) -> torch.nn.Module:
     from llmcompressor.utils import load_context
 
-    inspect_source_config(recipe)
+    source_config = inspect_source_config(recipe, allow_quantized=allow_quantized)
     source = recipe["source"]
     model_class = get_quantization_model_class(recipe)
-    with load_context(model_class):
-        return model_class.from_pretrained(
-            source["model_id"],
-            dtype=torch.bfloat16,
-            device_map="auto",
-            low_cpu_mem_usage=True,
-            trust_remote_code=source["trust_remote_code"],
+    distributed = (
+        torch.distributed.is_available() and torch.distributed.is_initialized()
+    )
+    load_kwargs = {
+        "dtype": torch.bfloat16,
+        "device_map": "auto_offload" if distributed else "auto",
+        "low_cpu_mem_usage": True,
+        "trust_remote_code": source["trust_remote_code"],
+    }
+    if distributed and offload_dir is not None:
+        offload_path = Path(offload_dir)
+        offload_path.mkdir(parents=True, exist_ok=True)
+        load_kwargs.update(
+            offload_folder=str(offload_path),
+            max_memory={"cpu": "104GiB"},
         )
+    with (
+        preserve_meta_device_map_for_non_source_rank(),
+        qwen4_exp_linearized_load_mapping(source_config),
+        load_context(model_class),
+    ):
+        model = model_class.from_pretrained(source["model_id"], **load_kwargs)
+    return model
 
 
 def load_quantization_tokenizer(recipe: dict[str, Any]):
@@ -829,6 +1014,102 @@ def build_calibration_dataset(
     )
 
 
+def distributed_dataset_partition(dataset, allow_empty=False):
+    """Return this rank's deterministic slice of a calibration dataset."""
+    if not (torch.distributed.is_available() and torch.distributed.is_initialized()):
+        return dataset
+    world_size = torch.distributed.get_world_size()
+    rank = torch.distributed.get_rank()
+    rows = len(dataset)
+    base, extra = divmod(rows, world_size)
+    start = rank * base + min(rank, extra)
+    end = start + base + (1 if rank < extra else 0)
+    if start == end and not allow_empty:
+        raise ValueError(
+            f"Calibration dataset has {rows} rows for {world_size} ranks"
+        )
+    return dataset.select(range(start, end))
+
+
+def _pin_ple_lookup_tables_to_cpu(model):
+    from compressed_tensors.offload.cache import OffloadCache
+
+    pinned = []
+    suffix = "ple.ple_embedding.ngram_embedding"
+    for name, module in model.named_modules():
+        if not name.endswith(suffix):
+            continue
+        for cache in (module._parameters, module._buffers):
+            if isinstance(cache, OffloadCache):
+                cache.onload_device = torch.device("cpu")
+        pinned.append(name)
+    return pinned
+
+
+@contextlib.contextmanager
+def keep_ple_lookup_tables_on_cpu(model):
+    """Keep large PLE lookups in RAM while active subgraphs run on the GPU."""
+    from compressed_tensors import offload
+    from compressed_tensors.utils import patch_attr
+    from llmcompressor.pipelines.data_free import pipeline as data_free_pipeline
+    from llmcompressor.pipelines.sequential import pipeline as sequential_pipeline
+
+    set_onload_device = offload.set_onload_device
+
+    def set_onload_device_except_ple(target, device):
+        result = set_onload_device(target, device)
+        _pin_ple_lookup_tables_to_cpu(target)
+        return result
+
+    with contextlib.ExitStack() as stack:
+        stack.enter_context(
+            patch_attr(offload, "set_onload_device", set_onload_device_except_ple)
+        )
+        stack.enter_context(
+            patch_attr(
+                sequential_pipeline,
+                "set_onload_device",
+                set_onload_device_except_ple,
+            )
+        )
+        stack.enter_context(
+            patch_attr(
+                data_free_pipeline,
+                "set_onload_device",
+                set_onload_device_except_ple,
+            )
+        )
+        yield
+
+
+def _reduce_expert_coverage_across_ranks(local_counts):
+    """Sum router coverage counters across ranks on a CPU-side Gloo group.
+
+    The default process group is NCCL and is sized for calibration-phase
+    stalls. Ranks can need much longer to stream their final coverage
+    sequences from disk, and this reduction involves no tensors on the GPU,
+    so it runs on a separate group with an order-of-magnitude longer timeout.
+    """
+    world_size = torch.distributed.get_world_size()
+    group = torch.distributed.new_group(
+        backend="gloo", timeout=timedelta(hours=8)
+    )
+    gathered = [None] * world_size
+    torch.distributed.gather_object(local_counts, gathered, dst=0, group=group)
+    merged = None
+    if torch.distributed.get_rank() == 0:
+        merged = {
+            name: {
+                domain: sum(entry[name][domain] for entry in gathered)
+                for domain in domain_counts
+            }
+            for name, domain_counts in gathered[0].items()
+        }
+    payload = [merged]
+    torch.distributed.broadcast_object_list(payload, src=0, group=group)
+    return payload[0]
+
+
 def measure_expert_coverage(
     model: torch.nn.Module,
     calibration_dir: str | os.PathLike[str],
@@ -838,8 +1119,11 @@ def measure_expert_coverage(
     *,
     records_by_domain: dict[str, list[dict[str, Any]]] | None = None,
 ) -> dict[str, Any]:
+    from compressed_tensors.offload import set_onload_device
     from compressed_tensors.utils.match import is_match
+    from llmcompressor.utils import get_main_device
 
+    set_onload_device(model, get_main_device())
     text_config = getattr(model.config, "text_config", model.config)
     num_experts = getattr(text_config, policy["num_experts_config_key"])
     top_k = getattr(text_config, policy["top_k_config_key"])
@@ -884,7 +1168,7 @@ def measure_expert_coverage(
                     f"an attention mask with {mask.numel()} tokens"
                 )
             selected = selected[mask].reshape(-1).to(dtype=torch.int64)
-            batch_counts = torch.bincount(selected, minlength=num_experts)
+            batch_counts = torch.bincount(selected, minlength=num_experts).cpu()
             if batch_counts.shape[0] != num_experts:
                 raise ValueError(f"Router {name} selected an out-of-range expert")
             domain = state["domain"]
@@ -900,7 +1184,7 @@ def measure_expert_coverage(
         for name, module in routers.items()
     ]
     model.eval()
-    input_device = model.get_input_embeddings().weight.device
+    input_device = get_main_device()
     coverage_calibration = {
         **weight_calibration,
         "token_budget": policy["token_budget"],
@@ -922,8 +1206,17 @@ def measure_expert_coverage(
                 seed=42 + domain_index,
                 records_by_domain=records_by_domain,
             )
+            # A small domain can legitimately hold fewer sequences than
+            # ranks; a rank then contributes no coverage rows for it.
+            dataset = distributed_dataset_partition(dataset, allow_empty=True)
             state["domain"] = domain
-            for row in dataset:
+            rank = (
+                torch.distributed.get_rank()
+                if torch.distributed.is_available()
+                and torch.distributed.is_initialized()
+                else 0
+            )
+            for sequence_index, row in enumerate(dataset, start=1):
                 state["mask"] = torch.tensor(
                     row["attention_mask"], dtype=torch.bool, device=input_device
                 )
@@ -938,6 +1231,11 @@ def measure_expert_coverage(
                         model(**inputs, use_cache=False)
                 finally:
                     state["mask"] = None
+                print(
+                    f"[rank {rank}] coverage domain={domain} "
+                    f"sequence {sequence_index}/{len(dataset)} complete",
+                    flush=True,
+                )
             state["domain"] = None
     finally:
         state["domain"] = None
@@ -945,13 +1243,20 @@ def measure_expert_coverage(
         for handle in handles:
             handle.remove()
 
-    for domain_counts in counts.values():
-        for domain, domain_count in domain_counts.items():
-            domain_counts[domain] = (
-                torch.zeros(num_experts, dtype=torch.int64)
-                if domain_count is None
-                else domain_count.cpu()
-            )
+    distributed = (
+        torch.distributed.is_available() and torch.distributed.is_initialized()
+    )
+    counts = {
+        name: {
+            domain: domain_count.cpu()
+            if domain_count is not None
+            else torch.zeros(num_experts, dtype=torch.int64)
+            for domain, domain_count in domain_counts.items()
+        }
+        for name, domain_counts in counts.items()
+    }
+    if distributed:
+        counts = _reduce_expert_coverage_across_ranks(counts)
 
     report = {
         "policy": policy,
@@ -988,24 +1293,26 @@ def measure_expert_coverage(
         ):
             failures.append(f"{name}: minimum={minimum}, uncovered={uncovered}")
     rendered_report = json.dumps(report, indent=2, sort_keys=True) + "\n"
-    print(rendered_report, end="")
-    report_path = Path(calibration_dir) / "expert_coverage.json"
-    temporary_path = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            prefix=".expert_coverage.",
-            suffix=".json",
-            dir=report_path.parent,
-            delete=False,
-        ) as temporary:
-            temporary.write(rendered_report)
-            temporary_path = Path(temporary.name)
-        temporary_path.replace(report_path)
-    finally:
-        if temporary_path is not None:
-            temporary_path.unlink(missing_ok=True)
+    rank = torch.distributed.get_rank() if distributed else 0
+    if rank == 0:
+        print(rendered_report, end="")
+        report_path = Path(calibration_dir) / "expert_coverage.json"
+        temporary_path = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                prefix=".expert_coverage.",
+                suffix=".json",
+                dir=report_path.parent,
+                delete=False,
+            ) as temporary:
+                temporary.write(rendered_report)
+                temporary_path = Path(temporary.name)
+            temporary_path.replace(report_path)
+        finally:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
     if failures:
         raise ValueError(
             "Routed-expert coverage did not meet policy:\n  " + "\n  ".join(failures)

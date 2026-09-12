@@ -7,6 +7,13 @@
   "save": {
     "shard_size": "4GB"
   },
+  "runtime": {
+    "batch_size": 8,
+    "dataloader_num_workers": 8,
+    "sequential_targets_per_subgraph": 16,
+    "sequential_prefetch": true,
+    "enable_compile": true
+  },
   "awq_prescale": {
     "calibration": {
       "domains": [
@@ -78,6 +85,7 @@
         "name": "fp8_sensitive",
         "format": "fp8",
         "targets": [
+          "lm_head",
           "re:.*self_attn\\.(q|k|v|o)_proj$",
           "re:.*linear_attn\\.(in_proj_qkv|in_proj_z|out_proj)$",
           "re:.*mlp\\.shared_expert\\.(gate|up|down)_proj$"
@@ -85,7 +93,6 @@
       }
     ],
     "ignore": [
-      "lm_head",
       "re:.*embed_tokens$",
       "re:.*visual.*",
       "re:.*mtp.*",
@@ -111,7 +118,7 @@
         "reasoning",
         "agentic"
       ],
-      "token_budget": 2097152,
+      "token_budget": 1048576,
       "sequence_length": 2048,
       "domain_weights": {
         "general": 0.35,

@@ -1,4 +1,4 @@
-.PHONY: all setup setup-sglang setup-vllm download convert calibrate recalibrate imatrix sensitivity quantize quantize-nvfp4 convert-nvfp4 bench-llamacpp bench-sglang compare compare-md serve serve-llama stop serve-vllm stop-vllm awq-prescale awq-convert awq-imatrix awq-sensitivity awq-quantize awq-all test clean help
+.PHONY: all setup setup-sglang setup-vllm download convert calibrate recalibrate imatrix sensitivity quantize quantize-nvfp4 quantize-nvfp4-ddp probe-nvfp4-ddp convert-nvfp4 bench-llamacpp bench-sglang compare compare-md serve serve-llama stop serve-vllm stop-vllm awq-prescale awq-convert awq-imatrix awq-sensitivity awq-quantize awq-all test clean help
 
 SHELL := /bin/bash
 PROJECT_DIR := $(shell pwd)
@@ -136,14 +136,39 @@ quantize:
 	@$(UV) bash $(SCRIPTS)/04_quantize.sh
 
 # Requires the quantize extra, a per-model quantize.json, and enough memory.
+NVFP4_OUTPUT_DIR ?= $(HOME)/models/nvfp4/$(MODEL_NAME)-NVFP4
+NPROC_PER_NODE ?= 8
+PROBE_TOKENS ?= 65536
+QUANT_MODEL_ID ?=
+
 quantize-nvfp4:
 	@test -f "$(QUANT_CONFIG)" || { echo "ERROR: quantization recipe not found: $(QUANT_CONFIG)" >&2; exit 1; }
 	@$(UV) python3 $(SRC)/quantize_nvfp4.py \
 		--config $(QUANT_CONFIG) \
 		--calibration-dir $(CALIBRATION_DIR) \
-		--output-dir $(HOME)/models/nvfp4/$(MODEL_NAME)-NVFP4
+		--output-dir $(NVFP4_OUTPUT_DIR) \
+		$(if $(QUANT_MODEL_ID),--model-id "$(QUANT_MODEL_ID)",)
 
-NVFP4_CHECKPOINT := $(HOME)/models/nvfp4/$(MODEL_NAME)-NVFP4
+quantize-nvfp4-ddp:
+	@test -f "$(QUANT_CONFIG)" || { echo "ERROR: quantization recipe not found: $(QUANT_CONFIG)" >&2; exit 1; }
+	@$(UV) torchrun --standalone --nproc-per-node=$(NPROC_PER_NODE) \
+		$(SRC)/quantize_nvfp4.py \
+		--config $(QUANT_CONFIG) \
+		--calibration-dir $(CALIBRATION_DIR) \
+		--output-dir $(NVFP4_OUTPUT_DIR) \
+		$(if $(QUANT_MODEL_ID),--model-id "$(QUANT_MODEL_ID)",)
+
+probe-nvfp4-ddp:
+	@test -f "$(QUANT_CONFIG)" || { echo "ERROR: quantization recipe not found: $(QUANT_CONFIG)" >&2; exit 1; }
+	@$(UV) torchrun --standalone --nproc-per-node=$(NPROC_PER_NODE) \
+		$(SRC)/quantize_nvfp4.py \
+		--config $(QUANT_CONFIG) \
+		--calibration-dir $(CALIBRATION_DIR) \
+		--output-dir $(NVFP4_OUTPUT_DIR)-probe \
+		--probe-tokens $(PROBE_TOKENS) \
+		$(if $(QUANT_MODEL_ID),--model-id "$(QUANT_MODEL_ID)",)
+
+NVFP4_CHECKPOINT := $(NVFP4_OUTPUT_DIR)
 NVFP4_GGUF := $(MODELS_DIR)/$(MODEL_NAME)-NVFP4.gguf
 CONVERT_SCRIPT := $(call model_var,CONVERT_SCRIPT)
 

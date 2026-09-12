@@ -1,5 +1,6 @@
 import copy
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -12,6 +13,7 @@ import torch
 ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+import linearize_moe_checkpoint
 import model_utils
 import quantize_nvfp4
 
@@ -95,6 +97,11 @@ class MockModel(torch.nn.Module):
         self.layers = torch.nn.ModuleList([MockBlock(), MockBlock()])
 
 
+class SelectableDataset(list):
+    def select(self, indices):
+        return SelectableDataset(self[index] for index in indices)
+
+
 class QuantizationRecipeTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -115,12 +122,41 @@ class QuantizationRecipeTest(unittest.TestCase):
             with self.subTest(path=path):
                 model_utils.load_quantization_recipe(path)
 
-    def test_flash_next_uses_source_precision_and_excludes_ple(self):
+    def test_flash_next_uses_source_precision_and_reference_layer_policy(self):
         path = ROOT / "configs" / "Qwen3.8-Flash-Next" / "quantize.json"
         recipe = model_utils.load_quantization_recipe(path)
         self.assertEqual(recipe["source"]["model_id"], "Qwen/Qwen3.8-Flash-Next")
         self.assertIn("re:.*\\.ple\\..*", recipe["nvfp4"]["ignore"])
+        fp8_group = next(
+            group for group in recipe["nvfp4"]["groups"] if group["format"] == "fp8"
+        )
+        self.assertIn("lm_head", fp8_group["targets"])
+        self.assertNotIn("lm_head", recipe["nvfp4"]["ignore"])
         self.assertTrue(recipe["nvfp4"]["gptq"]["offload_hessians"])
+
+    def test_runtime_controls_validate(self):
+        recipe = copy.deepcopy(self.recipe_data)
+        recipe["runtime"] = {
+            "batch_size": 4,
+            "dataloader_num_workers": 4,
+            "sequential_targets_per_subgraph": 2,
+            "sequential_prefetch": True,
+            "enable_compile": True,
+        }
+        loaded = model_utils.load_quantization_recipe(self.write_recipe(recipe))
+        self.assertEqual(loaded["runtime"]["batch_size"], 4)
+
+    def test_runtime_rejects_invalid_batch_size(self):
+        recipe = copy.deepcopy(self.recipe_data)
+        recipe["runtime"] = {
+            "batch_size": 0,
+            "dataloader_num_workers": 4,
+            "sequential_targets_per_subgraph": 2,
+            "sequential_prefetch": True,
+            "enable_compile": True,
+        }
+        with self.assertRaisesRegex(ValueError, "runtime.batch_size"):
+            model_utils.load_quantization_recipe(self.write_recipe(recipe))
 
     def test_unknown_key_is_rejected(self):
         recipe = copy.deepcopy(self.recipe_data)
@@ -364,6 +400,56 @@ class CalibrationPackingTest(unittest.TestCase):
             json.loads((self.path / "expert_coverage.json").read_text()), report
         )
 
+    def test_coverage_reduction_uses_gloo_group_with_long_timeout(self):
+        import torch.distributed as distributed
+        from datetime import timedelta
+
+        local = {
+            "layers.0.mlp.gate": {
+                "general": torch.ones(4, dtype=torch.int64),
+            }
+        }
+        group_sentinel = object()
+
+        def fake_gather(payload, gathered, dst, group):
+            self.assertEqual(dst, 0)
+            self.assertIs(group, group_sentinel)
+            for index in range(len(gathered)):
+                gathered[index] = {
+                    "layers.0.mlp.gate": {
+                        "general": torch.ones(4, dtype=torch.int64),
+                    }
+                }
+
+        def fake_broadcast(payload, src, group):
+            self.assertEqual(src, 0)
+            self.assertIs(group, group_sentinel)
+
+        with (
+            mock.patch.object(distributed, "is_available", return_value=True),
+            mock.patch.object(distributed, "is_initialized", return_value=True),
+            mock.patch.object(distributed, "get_world_size", return_value=2),
+            mock.patch.object(distributed, "get_rank", return_value=0),
+            mock.patch.object(
+                distributed, "new_group", return_value=group_sentinel
+            ) as new_group,
+            mock.patch.object(
+                distributed, "gather_object", side_effect=fake_gather
+            ),
+            mock.patch.object(
+                distributed, "broadcast_object_list", side_effect=fake_broadcast
+            ),
+        ):
+            merged = model_utils._reduce_expert_coverage_across_ranks(local)
+
+        new_group.assert_called_once_with(
+            backend="gloo", timeout=timedelta(hours=8)
+        )
+        self.assertEqual(
+            merged["layers.0.mlp.gate"]["general"].tolist(),
+            [2, 2, 2, 2],
+        )
+
     def test_real_router_coverage_threshold_fails_closed(self):
         self.write_domain(
             "general",
@@ -419,7 +505,258 @@ class CalibrationPackingTest(unittest.TestCase):
         self.assertEqual(report_a["packing"]["packed_tokens"], 120)
 
 
+class DistributedCalibrationTest(unittest.TestCase):
+    def test_non_source_rank_preserves_meta_device_map_without_reading_values(self):
+        import transformers.core_model_loading as core_model_loading
+        import transformers.modeling_utils as modeling_utils
+
+        class UnreadableTensor:
+            shape = torch.Size((2, 3))
+            dtype = torch.float16
+
+            def __getitem__(self, _key):
+                raise AssertionError("Tensor values must not be read on a meta rank")
+
+        class UnreadableSlice:
+            def get_shape(self):
+                return [4, 5]
+
+            def get_dtype(self):
+                return "BF16"
+
+            def __getitem__(self, _key):
+                raise AssertionError("Slice values must not be read on a meta rank")
+
+        original_get_device_map = modeling_utils._get_device_map
+        original_materialize_copy = core_model_loading._materialize_copy
+        with (
+            mock.patch.object(torch.distributed, "is_available", return_value=True),
+            mock.patch.object(torch.distributed, "is_initialized", return_value=True),
+            mock.patch.object(torch.distributed, "get_rank", return_value=1),
+            model_utils.preserve_meta_device_map_for_non_source_rank(),
+        ):
+            device_map = modeling_utils._get_device_map(None, "meta", None, None)
+            placeholder = core_model_loading._materialize_copy(
+                UnreadableTensor(), device="cpu"
+            )
+            slice_placeholder = core_model_loading._materialize_copy(
+                UnreadableSlice(), device="cpu"
+            )
+            self.assertEqual(device_map, {"": torch.device("meta")})
+            self.assertEqual(placeholder.device, torch.device("meta"))
+            self.assertEqual(placeholder.shape, torch.Size((2, 3)))
+            self.assertEqual(placeholder.dtype, torch.float16)
+            self.assertEqual(slice_placeholder.device, torch.device("meta"))
+            self.assertEqual(slice_placeholder.shape, torch.Size((4, 5)))
+            self.assertEqual(slice_placeholder.dtype, torch.bfloat16)
+        self.assertIs(modeling_utils._get_device_map, original_get_device_map)
+        self.assertIs(
+            core_model_loading._materialize_copy, original_materialize_copy
+        )
+
+    def test_source_rank_keeps_transformers_device_map_resolver(self):
+        import transformers.modeling_utils as modeling_utils
+
+        original = modeling_utils._get_device_map
+        with (
+            mock.patch.object(torch.distributed, "is_available", return_value=True),
+            mock.patch.object(torch.distributed, "is_initialized", return_value=True),
+            mock.patch.object(torch.distributed, "get_rank", return_value=0),
+            model_utils.preserve_meta_device_map_for_non_source_rank(),
+        ):
+            self.assertIs(modeling_utils._get_device_map, original)
+
+    def test_qwen4_exp_linearized_mapping_is_scoped(self):
+        from llmcompressor.modeling.moe import conversion_mappings
+
+        old_import = conversion_mappings.ARCH_TO_IMPORT_PATHS.get("qwen4_exp")
+        old_mapping = conversion_mappings.ARCH_TO_2D_MAPPINGS.get("qwen4_exp")
+        with model_utils.qwen4_exp_linearized_load_mapping(
+            {"model_type": "qwen4_exp", "super_quant_linearized_moe": True}
+        ):
+            self.assertIn("qwen4_exp", conversion_mappings.ARCH_TO_IMPORT_PATHS)
+            self.assertIn("qwen4_exp", conversion_mappings.ARCH_TO_2D_MAPPINGS)
+        self.assertEqual(
+            conversion_mappings.ARCH_TO_IMPORT_PATHS.get("qwen4_exp"), old_import
+        )
+        self.assertEqual(
+            conversion_mappings.ARCH_TO_2D_MAPPINGS.get("qwen4_exp"), old_mapping
+        )
+
+    def test_qwen4_exp_linearized_mapping_accepts_missing_base_mapping(self):
+        from llmcompressor.modeling.moe import conversion_mappings
+
+        original_get_mapping = (
+            conversion_mappings.get_checkpoint_conversion_mapping
+        )
+        with (
+            mock.patch.object(
+                conversion_mappings,
+                "get_checkpoint_conversion_mapping",
+                return_value=None,
+            ),
+            model_utils.qwen4_exp_linearized_load_mapping(
+                {"model_type": "qwen4_exp", "super_quant_linearized_moe": True}
+            ),
+        ):
+            _expert_class, load_mappings, save_mappings = (
+                conversion_mappings.get_linearize_load_mappings("qwen4_exp")
+            )
+            self.assertEqual(len(load_mappings), 3)
+            self.assertEqual(save_mappings, load_mappings)
+        self.assertIs(
+            conversion_mappings.get_checkpoint_conversion_mapping,
+            original_get_mapping,
+        )
+
+    def test_streaming_linearization_preserves_qwen4_exp_output(self):
+        from transformers.models.qwen4_exp.modeling_qwen4_exp import (
+            Qwen4ExpTextExperts,
+        )
+
+        config = SimpleNamespace(
+            model_type="qwen4_exp",
+            num_experts=2,
+            num_experts_per_tok=1,
+            hidden_size=4,
+            moe_intermediate_size=3,
+            hidden_act="silu",
+            dtype=torch.float32,
+            _experts_implementation="eager",
+        )
+        model = torch.nn.Module()
+        model.config = config
+        model.experts = Qwen4ExpTextExperts(config)
+        for parameter in model.parameters():
+            torch.nn.init.uniform_(parameter, -0.1, 0.1)
+        hidden_states = torch.randn(3, 4)
+        top_k_index = torch.tensor([[0], [1], [0]])
+        top_k_weights = torch.ones(3, 1)
+        expected = model.experts(hidden_states, top_k_index, top_k_weights)
+        model_utils.streaming_linearize_moe(model)
+        actual = model.experts(hidden_states, top_k_index, top_k_weights)
+        self.assertTrue(torch.allclose(actual, expected))
+
+    def test_linearized_checkpoint_validation_rejects_fused_experts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory)
+            (output_dir / "model.safetensors.index.json").write_text(
+                json.dumps(
+                    {
+                        "weight_map": {
+                            "model.layers.0.mlp.experts.gate_up_proj": "model.safetensors"
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(RuntimeError, "no per-expert 2D weights"):
+                linearize_moe_checkpoint.validate_linearized_checkpoint(output_dir)
+
+    def test_dataset_is_partitioned_without_overlap(self):
+        dataset = SelectableDataset(range(10))
+        partitions = []
+        for rank in range(3):
+            with (
+                mock.patch.object(torch.distributed, "is_available", return_value=True),
+                mock.patch.object(
+                    torch.distributed, "is_initialized", return_value=True
+                ),
+                mock.patch.object(torch.distributed, "get_world_size", return_value=3),
+                mock.patch.object(torch.distributed, "get_rank", return_value=rank),
+            ):
+                partitions.append(model_utils.distributed_dataset_partition(dataset))
+        self.assertEqual(partitions, [[0, 1, 2, 3], [4, 5, 6], [7, 8, 9]])
+        self.assertEqual(sorted(item for part in partitions for item in part), dataset)
+
+    def test_partition_rejects_more_ranks_than_rows(self):
+        dataset = SelectableDataset([1])
+        with (
+            mock.patch.object(torch.distributed, "is_available", return_value=True),
+            mock.patch.object(torch.distributed, "is_initialized", return_value=True),
+            mock.patch.object(torch.distributed, "get_world_size", return_value=2),
+            mock.patch.object(torch.distributed, "get_rank", return_value=1),
+            self.assertRaisesRegex(ValueError, "1 rows for 2 ranks"),
+        ):
+            model_utils.distributed_dataset_partition(dataset)
+
+    def test_ple_lookup_table_is_pinned_to_cpu(self):
+        class FakeCache(dict):
+            def __init__(self):
+                super().__init__()
+                self.onload_device = torch.device("cuda")
+
+        lookup = SimpleNamespace(_parameters=FakeCache(), _buffers=FakeCache())
+        model = mock.Mock()
+        model.named_modules.return_value = [
+            ("model.layers.1.ple.ple_embedding.ngram_embedding", lookup),
+            ("model.layers.1.ple.key_proj", mock.Mock()),
+        ]
+        with mock.patch("compressed_tensors.offload.cache.OffloadCache", FakeCache):
+            pinned = model_utils._pin_ple_lookup_tables_to_cpu(model)
+
+        self.assertEqual(pinned, ["model.layers.1.ple.ple_embedding.ngram_embedding"])
+        self.assertEqual(lookup._parameters.onload_device, torch.device("cpu"))
+        self.assertEqual(lookup._buffers.onload_device, torch.device("cpu"))
+
+    def test_ple_cpu_context_patches_sequential_pipeline_dispatch(self):
+        from compressed_tensors import offload
+        from llmcompressor.pipelines.sequential import pipeline
+
+        model = mock.Mock()
+        with (
+            mock.patch.object(offload, "set_onload_device", return_value=model) as base,
+            mock.patch.object(model_utils, "_pin_ple_lookup_tables_to_cpu") as pin,
+            model_utils.keep_ple_lookup_tables_on_cpu(model),
+        ):
+            result = pipeline.set_onload_device(model, torch.device("cuda", 0))
+
+        self.assertIs(result, model)
+        base.assert_called_once_with(model, torch.device("cuda", 0))
+        pin.assert_called_once_with(model)
+
+
 class QuantizationExecutionTest(unittest.TestCase):
+    def test_distributed_initialization_allows_long_source_rank_load(self):
+        accelerator = SimpleNamespace(type="cuda")
+        with (
+            mock.patch.dict(
+                os.environ,
+                {"WORLD_SIZE": "8", "RANK": "3", "LOCAL_RANK": "3"},
+            ),
+            mock.patch.object(
+                torch.accelerator,
+                "current_accelerator",
+                return_value=accelerator,
+            ),
+            mock.patch.object(torch.accelerator, "set_device_index") as set_device,
+            mock.patch.object(
+                torch.distributed, "init_process_group"
+            ) as init_process_group,
+            mock.patch.object(torch.distributed, "barrier") as barrier,
+        ):
+            quantize_nvfp4.initialize_distributed()
+
+        set_device.assert_called_once_with(3)
+        self.assertEqual(init_process_group.call_args.kwargs["backend"], "nccl")
+        self.assertEqual(init_process_group.call_args.kwargs["rank"], 3)
+        self.assertEqual(init_process_group.call_args.kwargs["world_size"], 8)
+        self.assertEqual(
+            init_process_group.call_args.kwargs["timeout"].total_seconds(), 7200
+        )
+        barrier.assert_called_once_with()
+
+    def test_probe_requires_one_sequence_per_distributed_rank(self):
+        recipe_path = ROOT / "configs" / "Qwen3.8-Flash-Next" / "quantize.json"
+        settings = copy.deepcopy(
+            model_utils.load_quantization_recipe(recipe_path)["nvfp4"]
+        )
+        with (
+            mock.patch.object(quantize_nvfp4, "distributed_world_size", return_value=8),
+            self.assertRaisesRegex(ValueError, "65,536 tokens for 8 sequences"),
+        ):
+            quantize_nvfp4.apply_probe(settings, 65_535)
+
     def test_weight_and_kv_calibration_run_as_separate_passes(self):
         recipe_path = ROOT / "configs" / "Qwen3.8-27B-AEON" / "quantize.json"
         recipe = model_utils.load_quantization_recipe(recipe_path)
@@ -470,7 +807,8 @@ class QuantizationExecutionTest(unittest.TestCase):
             ),
             mock.patch.object(
                 quantize_nvfp4, "load_quantization_model", return_value=model
-            ),
+            ) as load_model,
+            mock.patch.object(quantize_nvfp4, "report_device_map"),
             mock.patch.object(quantize_nvfp4, "validate_awq_mapping_targets"),
             mock.patch.object(
                 quantize_nvfp4,
@@ -482,16 +820,24 @@ class QuantizationExecutionTest(unittest.TestCase):
         ):
             quantize_nvfp4.main()
 
+        load_model.assert_called_once_with(
+            recipe, offload_dir=None, allow_quantized=False
+        )
         self.assertEqual(oneshot.call_count, 2)
         weight_call, kv_call = oneshot.call_args_list
         self.assertIs(weight_call.kwargs["dataset"], weight_dataset)
+        self.assertEqual(weight_call.kwargs["pipeline"], "sequential")
         self.assertIsNone(weight_call.kwargs["recipe"][1].kv_cache_scheme)
         self.assertFalse(weight_call.kwargs["moe_calibrate_all_experts"])
+        self.assertEqual(weight_call.kwargs["batch_size"], 1)
+        self.assertFalse(weight_call.kwargs["tie_word_embeddings"])
         self.assertIs(kv_call.kwargs["dataset"], kv_dataset)
         self.assertEqual(len(kv_call.kwargs["recipe"]), 1)
         self.assertIsNotNone(kv_call.kwargs["recipe"][0].kv_cache_scheme)
         self.assertEqual(kv_call.kwargs["recipe"][0].targets, [])
-        model.save_pretrained.assert_called_once()
+        # Two saves: the weight-phase checkpoint, then the final save that
+        # merges the calibrated KV-cache scales.
+        self.assertEqual(model.save_pretrained.call_count, 2)
 
 
 class QuantizationTargetTest(unittest.TestCase):
