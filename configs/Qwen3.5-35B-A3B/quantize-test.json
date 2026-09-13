@@ -14,7 +14,7 @@
     "sequential_prefetch": false,
     "enable_compile": false,
     "parallel_onload_workers": "auto",
-    "materialize_caches": true
+    "materialize_caches": false
   },
   "awq_prescale": {
     "calibration": {
