@@ -333,7 +333,7 @@ def load_quantization_recipe(path: str | os.PathLike[str]) -> dict[str, Any]:
                 "sequential_prefetch",
                 "enable_compile",
             },
-            optional={"parallel_onload_workers"},
+            optional={"parallel_onload_workers", "materialize_caches"},
         )
         if runtime.get("parallel_onload_workers") == "auto":
             world_size = int(os.environ.get("WORLD_SIZE", "1"))
