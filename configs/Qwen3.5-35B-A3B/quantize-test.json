@@ -106,7 +106,7 @@
       "re:.*_norm$",
       "re:.*\\.norm\\.weight$"
     ],
-    "kv_cache": "fp8",
+    "kv_cache": null,
     "gptq": {
       "block_size": 128,
       "dampening_frac": 0.01,
