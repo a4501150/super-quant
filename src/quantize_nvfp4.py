@@ -134,7 +134,7 @@ def initialize_distributed():
         rank=rank,
         world_size=world_size,
         device_id=device,
-        timeout=timedelta(hours=2),
+        timeout=timedelta(minutes=int(os.environ.get("DIST_TIMEOUT_MINUTES", "120"))),
     )
     torch.distributed.barrier()
 
