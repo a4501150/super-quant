@@ -742,17 +742,26 @@ class DistributedCalibrationTest(unittest.TestCase):
                 self.onload_device = torch.device("cuda")
 
         lookup = SimpleNamespace(_parameters=FakeCache(), _buffers=FakeCache())
+        visual = SimpleNamespace(_parameters=FakeCache(), _buffers=FakeCache())
+        text_layer = SimpleNamespace(_parameters=FakeCache(), _buffers=FakeCache())
         model = mock.Mock()
         model.named_modules.return_value = [
             ("model.layers.1.ple.ple_embedding.ngram_embedding", lookup),
             ("model.layers.1.ple.key_proj", mock.Mock()),
+            ("model.visual", visual),
+            ("model.text_layer", text_layer),
         ]
         with mock.patch("compressed_tensors.offload.cache.OffloadCache", FakeCache):
             pinned = model_utils._pin_ple_lookup_tables_to_cpu(model)
 
-        self.assertEqual(pinned, ["model.layers.1.ple.ple_embedding.ngram_embedding"])
+        self.assertEqual(
+            pinned,
+            ["model.layers.1.ple.ple_embedding.ngram_embedding", "model.visual"],
+        )
         self.assertEqual(lookup._parameters.onload_device, torch.device("cpu"))
         self.assertEqual(lookup._buffers.onload_device, torch.device("cpu"))
+        self.assertEqual(visual._parameters.onload_device, torch.device("cpu"))
+        self.assertEqual(text_layer._parameters.onload_device, torch.device("cuda"))
 
     def test_ple_cpu_context_patches_sequential_pipeline_dispatch(self):
         from compressed_tensors import offload

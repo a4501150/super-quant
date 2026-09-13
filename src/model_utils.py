@@ -1144,18 +1144,198 @@ def enable_parallel_onload(model, workers: int) -> int:
 
 
 def _pin_ple_lookup_tables_to_cpu(model):
+    """Keep out-of-scope heavy weights CPU-resident during calibration.
+
+    Covers the PLE lookup tables and the whole vision tower: text-only
+    training never forward-passes vision, and its dispatched cache entries
+    were observed to poison the first tracing-triggered onload (meta/
+    file-backed stores fault the H2D copy engine with a sticky illegal
+    access). Pinning caches to CPU keeps them reachable for state_dict
+    passthrough while keeping every CUDA copy on the text path.
+    """
     from compressed_tensors.offload.cache import OffloadCache
 
     pinned = []
     suffix = "ple.ple_embedding.ngram_embedding"
     for name, module in model.named_modules():
-        if not name.endswith(suffix):
+        if not (
+            name.endswith(suffix)
+            or name == "model.visual"
+            or name.startswith("model.visual.")
+        ):
             continue
         for cache in (module._parameters, module._buffers):
             if isinstance(cache, OffloadCache):
                 cache.onload_device = torch.device("cpu")
         pinned.append(name)
     return pinned
+
+
+def classify_offload_caches(model):
+    """Inventory dispatched cache stores: meta / file-view / private RAM.
+
+    File-view entries alias safetensors shards (or any external file) and
+    meta entries hold no bytes at all; both have been implicated in sticky
+    H2D illegal-access faults during calibration. Returns a stats dict.
+    """
+    from bisect import bisect_right
+    from compressed_tensors.offload.cache import OffloadCache
+
+    maps = []
+    try:
+        with open("/proc/self/maps") as handle:
+            for line in handle:
+                parts = line.split(maxsplit=5)
+                if len(parts) < 6 or not parts[1].startswith("r"):
+                    continue
+                try:
+                    lo, hi = (int(x, 16) for x in parts[0].split("-"))
+                except ValueError:
+                    continue
+                path = parts[5].strip()
+                if path.startswith("/"):
+                    maps.append((lo, path))
+    except OSError:
+        pass
+    maps.sort()
+    starts = [lo for lo, _ in maps]
+
+    stats = {"meta": 0, "file_view": 0, "private": 0, "none": 0}
+    file_backed_names = []
+    for mod_name, module in model.named_modules():
+        for holder in (module._parameters, module._buffers):
+            if not isinstance(holder, OffloadCache):
+                continue
+            for key, tensor in holder.offloaded_values.items():
+                full = f"{mod_name}.{key}" if mod_name else str(key)
+                if tensor is None:
+                    stats["none"] += 1
+                    continue
+                if tensor.device.type == "meta":
+                    stats["meta"] += 1
+                    file_backed_names.append((full, "meta"))
+                    continue
+                addr = tensor.data_ptr()
+                idx = bisect_right(starts, addr) - 1
+                if idx >= 0 and addr >= maps[idx][0]:
+                    # address falls inside a file mapping (heuristic: next
+                    # mapping start bounds it; good enough for a report)
+                    stats["file_view"] += 1
+                    file_backed_names.append((full, maps[idx][1]))
+                else:
+                    stats["private"] += 1
+    stats["names"] = file_backed_names
+    return stats
+
+
+def materialize_offload_caches(
+    model,
+    cache_dir,
+    source_dir,
+    private_limit: int = 2**20,
+):
+    """Rewrite dispatched cache stores as memory we own.
+
+    Post-dispatch entries may be file views into the safetensors shards or
+    meta placeholders; the copy engine faults reading those during
+    calibration (sticky illegal access). After this call every entry is
+    either a private clone (entries below ``private_limit`` bytes) or a
+    shared file mapping under ``cache_dir`` on node-local storage, populated
+    once by rank 0 and mapped read-mostly by every rank. Meta entries are
+    read from the source checkpoint via its shard index; tensors absent from
+    the checkpoint (loaded as placeholders, e.g. unused vision keys) are
+    zero-filled and returned in the ``missing`` report list.
+    """
+    from safetensors.torch import safe_open
+    from compressed_tensors.offload.cache import OffloadCache
+
+    distributed = (
+        torch.distributed.is_available() and torch.distributed.is_initialized()
+    )
+    rank = torch.distributed.get_rank() if distributed else 0
+
+    cache_dir = Path(cache_dir)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    weight_map = {}
+    index_path = Path(source_dir) / "model.safetensors.index.json"
+    if index_path.is_file():
+        weight_map = json.loads(index_path.read_text())["weight_map"]
+
+    entries = []
+    for mod_name, module in model.named_modules():
+        for holder in (module._parameters, module._buffers):
+            if not isinstance(holder, OffloadCache):
+                continue
+            for key, tensor in list(holder.offloaded_values.items()):
+                if tensor is None:
+                    continue
+                full = f"{mod_name}.{key}" if mod_name else str(key)
+                entries.append((holder, key, full, tensor))
+
+    missing: list[str] = []
+    shards_cache: dict[str, Any] = {}
+
+    def read_source(full: str) -> torch.Tensor:
+        shard = weight_map[full]
+        if shard not in shards_cache:
+            shards_cache[shard] = safe_open(
+                str(Path(source_dir) / shard), framework="pt"
+            )
+        return shards_cache[shard].get_tensor(full)
+
+    def attach(full: str, tensor: torch.Tensor) -> torch.Tensor:
+        nbytes = max(tensor.numel() * tensor.element_size(), 1)
+        path = cache_dir / (full.replace(".", "_") + ".bin")
+        storage = torch.UntypedStorage.from_file(str(path), shared=True, nbytes=nbytes)
+        flat = torch.empty(0, dtype=tensor.dtype, device="cpu").set_(storage)
+        return flat[: nbytes // tensor.element_size()].view(tensor.shape)
+
+    stats = {"private": 0, "shared_file": 0, "meta_fixed": 0}
+    for holder, key, full, tensor in entries:
+        nbytes = tensor.numel() * tensor.element_size()
+        if nbytes < private_limit:
+            if tensor.device.type == "meta":
+                new = torch.zeros(tensor.shape, dtype=tensor.dtype)
+                if full in weight_map:
+                    new.copy_(read_source(full))
+                else:
+                    missing.append(full)
+                stats["meta_fixed"] += 1
+            else:
+                new = tensor.detach().to("cpu").clone()
+                stats["private"] += 1
+        elif rank == 0 or not distributed:
+            dst = attach(full, tensor)
+            if tensor.device.type == "meta":
+                if full in weight_map:
+                    dst.copy_(read_source(full))
+                else:
+                    dst.zero_()
+                    missing.append(full)
+                stats["meta_fixed"] += 1
+            else:
+                dst.copy_(tensor.detach().to("cpu"))
+            stats["shared_file"] += 1
+            holder.offloaded_values[key] = dst
+            continue
+        else:
+            # Non-zero ranks attach after the barrier below; no data writes.
+            if tensor.device.type == "meta" and full not in weight_map:
+                missing.append(full)
+            stats["shared_file"] += 1
+        holder.offloaded_values[key] = new if nbytes < private_limit else tensor
+
+    if distributed:
+        torch.distributed.barrier()
+        if rank != 0:
+            for holder, key, full, tensor in entries:
+                if (
+                    tensor.numel() * tensor.element_size() >= private_limit
+                    and tensor.numel() > 0
+                ):
+                    holder.offloaded_values[key] = attach(full, tensor)
+
+    return {"entries": len(entries), "missing": missing, **stats}
 
 
 @contextlib.contextmanager

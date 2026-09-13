@@ -24,9 +24,11 @@ from model_utils import (
     _pin_ple_lookup_tables_to_cpu,
     build_awq_modifier,
     build_calibration_dataset,
+    classify_offload_caches,
     distributed_dataset_partition,
     enable_parallel_onload,
     keep_ple_lookup_tables_on_cpu,
+    materialize_offload_caches,
     load_calibration_records,
     load_quantization_model,
     load_quantization_recipe,
@@ -418,6 +420,29 @@ def main():
 
         set_onload_device(model, get_main_device())
         _pin_ple_lookup_tables_to_cpu(model)
+
+        if runtime.get("materialize_caches"):
+            print_primary("\n=== Inventorying offload caches ===")
+            inv = classify_offload_caches(model)
+            print_primary(
+                f"Cache stores: meta={inv['meta']} file_view={inv['file_view']} "
+                f"private={inv['private']} none={inv['none']}"
+            )
+            print_primary("=== Materializing offload caches into owned memory ===")
+            mat = materialize_offload_caches(
+                model,
+                cache_dir=(
+                    Path(args.offload_dir) if args.offload_dir else output_dir
+                )
+                / "materialized",
+                source_dir=Path(recipe["source"]["model_id"]),
+            )
+            print_primary(
+                f"Materialized {mat['entries']} entries "
+                f"(private={mat['private']} shared_file={mat['shared_file']} "
+                f"meta_fixed={mat['meta_fixed']}); "
+                f"zero-filled absent keys: {len(mat['missing'])}"
+            )
 
         timings = []
         telemetry_path = output_dir / "gpu_telemetry.jsonl"
