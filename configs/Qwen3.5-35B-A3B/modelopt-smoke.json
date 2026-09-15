@@ -1,0 +1,29 @@
+{
+  "source": {
+    "model_id": "/tmp/q35a3b",
+    "task": "causal-lm",
+    "trust_remote_code": false
+  },
+  "modelopt": {
+    "recipe_yaml": "configs/Qwen3.5-35B-A3B/modelopt/recipe.yaml",
+    "batch_size": 4,
+    "device_map": "cuda",
+    "weight_calibration": {
+      "domains": [
+        "general",
+        "code",
+        "reasoning",
+        "agentic"
+      ],
+      "token_budget": 8192,
+      "sequence_length": 2048,
+      "domain_weights": {
+        "general": 0.3,
+        "code": 0.25,
+        "reasoning": 0.25,
+        "agentic": 0.2
+      },
+      "minimum_achieved_ratio": 0.98
+    }
+  }
+}

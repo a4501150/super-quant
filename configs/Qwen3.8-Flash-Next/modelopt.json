@@ -1,0 +1,33 @@
+{
+  "source": {
+    "model_id": "/tmp/flashnext-bf16",
+    "task": "image-text-to-text",
+    "trust_remote_code": false
+  },
+  "modelopt": {
+    "recipe_yaml": "configs/Qwen3.8-Flash-Next/modelopt/recipe.yaml",
+    "batch_size": 16,
+    "device_map": "fsdp2",
+    "weight_calibration": {
+      "domains": [
+        "general",
+        "code",
+        "reasoning",
+        "agentic"
+      ],
+      "token_budget": 524288,
+      "sequence_length": 2048,
+      "domain_weights": {
+        "general": 0.3,
+        "code": 0.25,
+        "reasoning": 0.25,
+        "agentic": 0.2
+      },
+      "long_sequences": {
+        "lengths": [32768, 16384],
+        "rows_per_domain": 2
+      },
+      "minimum_achieved_ratio": 0.98
+    }
+  }
+}

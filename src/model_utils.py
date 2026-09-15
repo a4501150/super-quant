@@ -755,6 +755,14 @@ def build_calibration_dataset(
         "sequence_length": sequence_length,
         "domains": {},
     }
+    separator_id = tokenizer.eos_token_id
+    if separator_id is None:
+        raise ValueError("Tokenizer must define eos_token_id for sample packing")
+    pad_id = tokenizer.pad_token_id
+    if pad_id is None:
+        pad_id = separator_id
+    long_cfg = calibration.get("long_sequences")
+    long_rows: list[dict[str, list[int]]] = []
     for domain_index, domain in enumerate(calibration["domains"]):
         candidates = sorted(records_by_domain[domain], key=lambda record: record["id"])
         random.Random(seed + domain_index).shuffle(candidates)
@@ -767,7 +775,57 @@ def build_calibration_dataset(
             "skipped_conversation_tokens": 0,
         }
         examined_units = 0
-        for record in candidates:
+        cursor = 0
+        # Long rows (see configs/*/modelopt.json long_sequences): tokenized
+        # and packed *within this domain* at each long length, then deducted
+        # from the domain's normal (sequence_length) quota so the total stays
+        # at token_budget. rows_per_domain * n_domains must be a multiple of
+        # the FSDP2 world size: every rank needs the same number of batches
+        # per length bucket or the amax all-reduce collectives deadlock.
+        long_stats: dict[str, dict[str, int]] = {}
+        long_share = 0
+        if long_cfg:
+            for long_len in long_cfg["lengths"]:
+                needed = long_cfg["rows_per_domain"] * long_len
+                units_L: list[dict[str, Any]] = []
+                got = 0
+                while got < needed and cursor < len(candidates):
+                    units_r, record_stats = _calibration_units(
+                        [candidates[cursor]], tokenizer, long_len
+                    )
+                    cursor += 1
+                    for key in stats:
+                        stats[key] += record_stats[key]
+                    for unit in units_r:
+                        units_L.append(unit)
+                        got += len(unit["token_ids"])
+                        if got >= needed:
+                            break
+                rows_L, _ = _pack_calibration_units(
+                    units_L, long_len, separator_id, pad_id
+                )
+                taken = rows_L[: long_cfg["rows_per_domain"]]
+                long_rows.extend(taken)
+                long_share += sum(
+                    sum(1 for m in r["attention_mask"] if m) for r in taken
+                )
+                long_stats[str(long_len)] = {
+                    "rows": len(taken),
+                    "tokens": long_share,
+                }
+            selected_tokens += long_share
+        # Wrap once when the domain's unique records run dry (agentic holds
+        # ~400K unique tokens, under its 20% share of a 2.1M budget): a reused
+        # record contributes genuine activations, merely duplicated — the
+        # GPTQ/AWQ literature calibrates on overlapping windows as a matter of
+        # course. Second wrap means the pool is truly too small: fail the gate.
+        wraps = 0
+        while selected_tokens < quotas[domain] and wraps < 2:
+            if cursor >= len(candidates):
+                cursor = 0
+                wraps += 1
+            record = candidates[cursor]
+            cursor += 1
             units, record_stats = _calibration_units(
                 [record], tokenizer, sequence_length
             )
@@ -779,8 +837,6 @@ def build_calibration_dataset(
                 selected_tokens += len(unit["token_ids"])
                 if selected_tokens >= quotas[domain]:
                     break
-            if selected_tokens >= quotas[domain]:
-                break
         achieved_ratio = selected_tokens / quotas[domain]
         if achieved_ratio < calibration["minimum_achieved_ratio"]:
             raise ValueError(
@@ -790,6 +846,8 @@ def build_calibration_dataset(
             )
         report["domains"][domain] = {
             **stats,
+            "long": long_stats,
+            "candidate_reuse_wraps": wraps,
             "examined_units": examined_units,
             "quota_tokens": quotas[domain],
             "selected_units": len(selected),
@@ -800,15 +858,16 @@ def build_calibration_dataset(
 
     selected_units.sort(key=lambda unit: unit["id"])
     random.Random(seed + 10_000).shuffle(selected_units)
-    separator_id = tokenizer.eos_token_id
-    if separator_id is None:
-        raise ValueError("Tokenizer must define eos_token_id for sample packing")
-    pad_id = tokenizer.pad_token_id
-    if pad_id is None:
-        pad_id = separator_id
     rows, packing = _pack_calibration_units(
         selected_units, sequence_length, separator_id, pad_id
     )
+    if long_rows:
+        # Long rows lead the dataset, grouped by descending length, so the
+        # rank-sliced FSDP2 shards each receive an identical set of long
+        # buckets (position j of each bucket goes to rank j).
+        long_rows.sort(key=lambda r: (-len(r["input_ids"]), r["input_ids"][0]))
+        rows = long_rows + rows
+        packing["long_rows"] = len(long_rows)
     position_offsets = calibration.get("position_offsets")
     if position_offsets:
         for index, row in enumerate(rows):

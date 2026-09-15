@@ -48,8 +48,13 @@ else
     cp -a "${SGLANG_SOURCE_DIR}/python" "${build_root}/sglang/python"
     cp -a "${SGLANG_SOURCE_DIR}/rust" "${build_root}/sglang/rust"
     cp -a "${SGLANG_SOURCE_DIR}/proto" "${build_root}/sglang/proto"
+    # Two separate copies: passing both target dirs as sources+target makes
+    # cp treat "${build_root}/sglang/" as a source directory and abort
+    # without -r (2026-09-15 fresh-pod rebuild hit exactly this).
     cp "${SGLANG_SOURCE_DIR}/README.md" "${SGLANG_SOURCE_DIR}/LICENSE" \
-        "${build_root}/sglang/" "${build_root}/sglang/python/"
+        "${build_root}/sglang/"
+    cp "${SGLANG_SOURCE_DIR}/README.md" "${SGLANG_SOURCE_DIR}/LICENSE" \
+        "${build_root}/sglang/python/"
 
     pyproject="${build_root}/sglang/python/pyproject.toml"
     sed -i \
@@ -84,11 +89,18 @@ else
     deep_gemm_wheels=("${native_wheel_dir}"/sgl_deep_gemm-${SGLANG_DEEP_GEMM_VERSION}-*.whl)
     deep_ep_wheels=("${native_wheel_dir}"/sgl_deep_ep-${SGLANG_DEEP_EP_VERSION}-*.whl)
     shopt -u nullglob
-    if (( ${#kernel_wheels[@]} != 1 || ${#deep_gemm_wheels[@]} != 1 || ${#deep_ep_wheels[@]} != 1 )); then
-        echo "ERROR: expected one sglang-kernel, sgl-deep-gemm, and sgl-deep-ep wheel in ${native_wheel_dir}" >&2
+    if (( ${#kernel_wheels[@]} != 1 || ${#deep_gemm_wheels[@]} != 1 )); then
+        echo "ERROR: expected one sglang-kernel and sgl-deep-gemm wheel in ${native_wheel_dir}" >&2
         exit 1
     fi
-    native_wheels=("${kernel_wheels[0]}" "${deep_gemm_wheels[0]}" "${deep_ep_wheels[0]}")
+    native_wheels=("${kernel_wheels[0]}" "${deep_gemm_wheels[0]}")
+    # deep-ep serves only the EP/DP-attention path (not our launch shape) and
+    # PyPI's releases lag cp312 x86_64 coverage; optional on purpose.
+    if (( ${#deep_ep_wheels[@]} == 1 )); then
+        native_wheels+=("${deep_ep_wheels[0]}")
+    else
+        echo "WARN: no sgl-deep-ep wheel; EP/DP-attention unavailable" >&2
+    fi
 
     requirements="${build_root}/requirements.txt"
     uv pip compile "${pyproject}" \
@@ -112,9 +124,9 @@ else
         --no-build-isolation --no-deps --editable "${SGLANG_SOURCE_DIR}/python"
     uv pip install --python "${python_bin}" "pytest==${SGLANG_PYTEST_VERSION}"
 
-    EXPECTED_CUDA="${SGLANG_CUDA_VERSION}" \
-    EXPECTED_CUDA_MAJOR="${cuda_major}" \
-    EXPECTED_CUDA_TAG="${SGLANG_CUDA_TAG}" \
+    EXPECTED_CUDA="${SGLANG_TORCH_CUDA_VERSION}" \
+    EXPECTED_CUDA_MAJOR="${SGLANG_CUDA_VERSION%%.*}" \
+    EXPECTED_CUDA_TAG="${SGLANG_TORCH_CUDA_TAG}" \
     EXPECTED_TORCH="${SGLANG_TORCH_VERSION}" \
     EXPECTED_TORCHVISION="${SGLANG_TORCHVISION_VERSION}" \
     EXPECTED_TORCHAUDIO="${SGLANG_TORCHAUDIO_VERSION}" \
@@ -142,15 +154,30 @@ expected = {
     "sgl-deep-ep": os.environ["EXPECTED_DEEP_EP"],
 }
 for package, version in expected.items():
-    actual = importlib.metadata.version(package)
+    try:
+        actual = importlib.metadata.version(package)
+    except importlib.metadata.PackageNotFoundError:
+        # sgl-deep-ep is optional (EP/DP-attention path only); the others are
+        # installed unconditionally above, so anything else missing is a bug.
+        assert package == "sgl-deep-ep", package
+        print(f"Validated: optional {package} absent")
+        continue
     assert actual == version, (package, actual, version)
 assert torch.version.cuda == os.environ["EXPECTED_CUDA"], torch.version.cuda
 assert os.environ["EXPECTED_CUDA_TAG"] in torch.__version__, torch.__version__
-assert os.environ["EXPECTED_CUDA_TAG"] in torchaudio.__version__, torchaudio.__version__
-assert os.environ["EXPECTED_CUDA_TAG"] in torchvision.__version__, torchvision.__version__
-assert torch.cuda.get_device_capability() == (12, 0)
-for module in ("flashinfer", "deep_ep", "deep_gemm", "sgl_kernel", "sglang"):
+# torchaudio comes from PyPI (no local CUDA tag); torchvision/torchcodec
+# carry the tag but the metadata-version loop above already pins them.
+assert torchvision.__version__ and torchaudio.__version__
+# RTX Pro 6000 (12,0) is the serving target; H100 (9,0) runs the
+# TP8 build/serve smoke (FP4 GEMM degrades to W4A16 there).
+assert torch.cuda.get_device_capability() in {(12, 0), (9, 0)}, \
+    torch.cuda.get_device_capability()
+for module in ("flashinfer", "deep_gemm", "sgl_kernel", "sglang"):
     importlib.import_module(module)
+try:
+    importlib.import_module("deep_ep")
+except ImportError:
+    print("Validated: optional deep_ep module absent")
 for stem in (
     "torch_memory_saver_hook_mode_torch",
     "torch_memory_saver_hook_mode_preload",
@@ -168,7 +195,7 @@ print(
 )
 PY
 
-    VENV_RELEASE="${VENV_RELEASE}" EXPECTED_CUDA_MAJOR="${cuda_major}" \
+    VENV_RELEASE="${VENV_RELEASE}" EXPECTED_CUDA_MAJOR="${SGLANG_CUDA_VERSION%%.*}" \
     "${python_bin}" - <<'PY'
 import os
 import re
