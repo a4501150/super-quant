@@ -34,7 +34,7 @@ ensure_sglang() {
     local manifest="${SGLANG_VENV}/.super-quant-sglang-env"
     local source_revision
     source_revision="$(git -C "${SGLANG_SOURCE_DIR}" rev-parse HEAD)"
-    if [[ ! -x "${SGLANG_VENV}/bin/python" ]] ||
+    if [[ ! -x "${SGLANG_VENV}/bin/sglang" ]] ||
         [[ ! -f "${manifest}" ]] ||
         [[ "$(sed -n '1p' "${manifest}")" != "${SGLANG_ENV_REVISION}" ]] ||
         [[ "$(sed -n '2p' "${manifest}")" != "${source_revision}" ]]; then
@@ -173,7 +173,7 @@ export FLASHINFER_NINJA_JOBS="${FLASHINFER_NINJA_JOBS:-4}" FLASHINFER_NVCC_THREA
 export TORCHINDUCTOR_COMPILE_THREADS="${TORCHINDUCTOR_COMPILE_THREADS:-4}"
 
 
-"${SGLANG_VENV}/bin/python" -m sglang.launch_server "${ARGS[@]}" \
+"${SGLANG_VENV}/bin/sglang" serve "${ARGS[@]}" \
     > "$LOGFILE" 2>&1 &
 
 SERVER_PID=$!
