@@ -17,6 +17,7 @@ if ! "${CUDA_HOME}/bin/nvcc" --version | grep -q "release ${SGLANG_CUDA_VERSION}
     echo "ERROR: ${CUDA_HOME}/bin/nvcc is not CUDA ${SGLANG_CUDA_VERSION}" >&2
     exit 1
 fi
+cuda_major="${SGLANG_CUDA_VERSION%%.*}"
 if [[ ! -f "${SGLANG_SOURCE_DIR}/python/pyproject.toml" ]]; then
     echo "ERROR: SGLang source not found at ${SGLANG_SOURCE_DIR}" >&2
     exit 1
