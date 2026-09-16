@@ -173,7 +173,7 @@ export FLASHINFER_NINJA_JOBS="${FLASHINFER_NINJA_JOBS:-4}" FLASHINFER_NVCC_THREA
 export TORCHINDUCTOR_COMPILE_THREADS="${TORCHINDUCTOR_COMPILE_THREADS:-4}"
 
 
-"${SGLANG_VENV}/bin/sglang" serve "${ARGS[@]}" \
+"${SGLANG_VENV}/bin/sglang" serve --model-type llm "${ARGS[@]}" \
     > "$LOGFILE" 2>&1 &
 
 SERVER_PID=$!
