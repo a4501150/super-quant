@@ -10,6 +10,7 @@ Config-driven quantization and serving pipeline for hybrid language models. The 
 - Shared AWQ and GPTQ scripts interpret `configs/<model>/quantize.json`. Keep architecture targets and exclusions in that recipe, and reject already-compressed sources instead of re-quantizing them.
 - SGLang, vLLM, and the project use separate environments because their dependency constraints conflict. Do not install serving packages into the project `.venv`.
 - SGLang native wheels are keyed by CUDA tag and SGLang source revision under `~/.cache/super-quant/wheels/`. Rebuild the wheels before changing the SGLang revision.
+- Stop the production server before an eight-job native CUDA build. The 2026-09-16 OOM came from compiling while the model still held its large host-memory allocation; do not reduce production performance settings or permanently throttle builds because of that overlap.
 - The qualified SM120 SGLang stack uses CUDA 13.4 nightly PyTorch and revision-matched native wheels. Stable PyTorch only publishes older CUDA runtimes; do not substitute its cu130 wheels for this production environment.
 - Keep each qualified, dated SGLang production branch unchanged. For an upstream update, create a new dated branch from `origin/main`, apply only the local patches that upstream still lacks, then rebuild the revision-keyed wheels and repeat qualification.
 - SGLang uses `.sglang.pid`/`.sglang.log`; vLLM uses `.vllm.pid`/`.vllm.log`. They are independent processes but normally compete for the same configured port and GPU.
