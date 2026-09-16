@@ -1,0 +1,103 @@
+{
+  "server": "sglang",
+  "harness": 3,
+  "model": "qwen3.8-flash-next",
+  "single_user": [],
+  "concurrent": [],
+  "prefill_probe": [
+    {
+      "target_tokens": 131072,
+      "cold": {
+        "ok": true,
+        "prompt_tokens": 118028,
+        "cached_tokens": 118016,
+        "completion_tokens": 32,
+        "ttft_s": 2.917,
+        "wall_s": 3.283,
+        "prefill_tps": null,
+        "decode_tps": 84.7,
+        "expected_marker": "b6249832",
+        "marker_valid": true,
+        "cache_hit_ratio": 0.9999,
+        "min_cache_hit_ratio": 0.95
+      },
+      "warm": {
+        "ok": true,
+        "prompt_tokens": 118028,
+        "cached_tokens": 118016,
+        "completion_tokens": 32,
+        "ttft_s": 0.418,
+        "wall_s": 0.759,
+        "prefill_tps": null,
+        "decode_tps": 90.9,
+        "expected_marker": "b6249832",
+        "marker_valid": true,
+        "cache_hit_ratio": 0.9999,
+        "min_cache_hit_ratio": 0.95
+      }
+    },
+    {
+      "target_tokens": 32768,
+      "cold": {
+        "ok": true,
+        "prompt_tokens": 29577,
+        "cached_tokens": 29568,
+        "completion_tokens": 32,
+        "ttft_s": 0.84,
+        "wall_s": 1.186,
+        "prefill_tps": null,
+        "decode_tps": 89.5,
+        "expected_marker": "24f06842",
+        "marker_valid": true,
+        "cache_hit_ratio": 0.9997,
+        "min_cache_hit_ratio": 0.95
+      },
+      "warm": {
+        "ok": true,
+        "prompt_tokens": 29577,
+        "cached_tokens": 29568,
+        "completion_tokens": 32,
+        "ttft_s": 0.223,
+        "wall_s": 0.558,
+        "prefill_tps": null,
+        "decode_tps": 92.4,
+        "expected_marker": "24f06842",
+        "marker_valid": true,
+        "cache_hit_ratio": 0.9997,
+        "min_cache_hit_ratio": 0.95
+      }
+    },
+    {
+      "target_tokens": 8192,
+      "cold": {
+        "ok": true,
+        "prompt_tokens": 7435,
+        "cached_tokens": 7424,
+        "completion_tokens": 32,
+        "ttft_s": 7.394,
+        "wall_s": 7.745,
+        "prefill_tps": null,
+        "decode_tps": 88.2,
+        "expected_marker": "ba849d92",
+        "marker_valid": true,
+        "cache_hit_ratio": 0.9985,
+        "min_cache_hit_ratio": 0.95
+      },
+      "warm": {
+        "ok": true,
+        "prompt_tokens": 7435,
+        "cached_tokens": 7424,
+        "completion_tokens": 32,
+        "ttft_s": 0.164,
+        "wall_s": 0.51,
+        "prefill_tps": null,
+        "decode_tps": 89.8,
+        "expected_marker": "ba849d92",
+        "marker_valid": true,
+        "cache_hit_ratio": 0.9985,
+        "min_cache_hit_ratio": 0.95
+      }
+    }
+  ],
+  "failures": []
+}

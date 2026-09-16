@@ -1,0 +1,148 @@
+{
+  "server": "sglang",
+  "harness": 3,
+  "model": "qwen3.8-flash-next",
+  "single_user": [],
+  "concurrent": [],
+  "prefill_probe": [],
+  "correctness": [
+    {
+      "target_tokens": 131072,
+      "cold": {
+        "ok": true,
+        "prompt_tokens": 118063,
+        "cached_tokens": 0,
+        "completion_tokens": 48,
+        "ttft_s": 17.87,
+        "wall_s": 18.496,
+        "prefill_tps": 6606.9,
+        "decode_tps": 75.1,
+        "expected_markers": [
+          "87fb5281",
+          "c5d0ab00",
+          "d9e76179",
+          "ee23ce7e"
+        ],
+        "matched": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.0,
+        "min_cache_hit_ratio": 0.0
+      },
+      "l3_restore": {
+        "ok": false,
+        "prompt_tokens": 118063,
+        "cached_tokens": 118016,
+        "completion_tokens": 48,
+        "ttft_s": 3.291,
+        "wall_s": 3.83,
+        "prefill_tps": null,
+        "decode_tps": 87.2,
+        "expected_markers": [
+          "87fb5281",
+          "c5d0ab00",
+          "d9e76179",
+          "ee23ce7e"
+        ],
+        "matched": false,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.9996,
+        "min_cache_hit_ratio": 0.9,
+        "error": "response diverges from /tmp/tmp.fBkFAZRjNs/correct_cold_131072.ans at char 0 (length 41 vs 62): expected '\\n\\n87fb5281, c5d0ab00, d9e76179, ee23ce7e\\nuser\\nassistant\\n\\n\\n87', got '87fb5281, c5d0ab00, d9e76179, ee23ce7e\\n\\n\\n'"
+      },
+      "l1_hit": {
+        "ok": true,
+        "prompt_tokens": 118063,
+        "cached_tokens": 118016,
+        "completion_tokens": 48,
+        "ttft_s": 0.487,
+        "wall_s": 1.022,
+        "prefill_tps": null,
+        "decode_tps": 87.9,
+        "expected_markers": [
+          "87fb5281",
+          "c5d0ab00",
+          "d9e76179",
+          "ee23ce7e"
+        ],
+        "matched": true,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.9996,
+        "min_cache_hit_ratio": 0.9
+      }
+    },
+    {
+      "target_tokens": 32768,
+      "cold": {
+        "ok": true,
+        "prompt_tokens": 29505,
+        "cached_tokens": 0,
+        "completion_tokens": 48,
+        "ttft_s": 5.414,
+        "wall_s": 6.115,
+        "prefill_tps": 5449.8,
+        "decode_tps": 67.1,
+        "expected_markers": [
+          "6338c21c",
+          "ed7f69f2",
+          "1bea883b",
+          "2c7ceabf"
+        ],
+        "matched": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.0,
+        "min_cache_hit_ratio": 0.0
+      },
+      "l3_restore": {
+        "ok": false,
+        "prompt_tokens": 29505,
+        "cached_tokens": 29504,
+        "completion_tokens": 48,
+        "ttft_s": 14.46,
+        "wall_s": 15.132,
+        "prefill_tps": null,
+        "decode_tps": 69.9,
+        "expected_markers": [
+          "6338c21c",
+          "ed7f69f2",
+          "1bea883b",
+          "2c7ceabf"
+        ],
+        "matched": false,
+        "marker_valid": true,
+        "cache_hit_ratio": 1.0,
+        "min_cache_hit_ratio": 0.9,
+        "error": "response diverges from /tmp/tmp.fBkFAZRjNs/correct_cold_32768.ans at char 0 (length 59 vs 39): expected '6338c21c, ed7f69f2, 1bea883b, 2c7ceabf\\n', got '\\n\\n6338c21c, ed7f69f2, 1bea883b, 2c7ceabf\\nuser\\nassistant\\n\\n\\n6'"
+      },
+      "l1_hit": {
+        "ok": true,
+        "prompt_tokens": 29505,
+        "cached_tokens": 29504,
+        "completion_tokens": 48,
+        "ttft_s": 3.683,
+        "wall_s": 4.356,
+        "prefill_tps": null,
+        "decode_tps": 69.8,
+        "expected_markers": [
+          "6338c21c",
+          "ed7f69f2",
+          "1bea883b",
+          "2c7ceabf"
+        ],
+        "matched": true,
+        "marker_valid": true,
+        "cache_hit_ratio": 1.0,
+        "min_cache_hit_ratio": 0.9
+      }
+    }
+  ],
+  "failures": [
+    {
+      "file": "correct_l3_131072.json",
+      "error": "response diverges from /tmp/tmp.fBkFAZRjNs/correct_cold_131072.ans at char 0 (length 41 vs 62): expected '\\n\\n87fb5281, c5d0ab00, d9e76179, ee23ce7e\\nuser\\nassistant\\n\\n\\n87', got '87fb5281, c5d0ab00, d9e76179, ee23ce7e\\n\\n\\n'"
+    },
+    {
+      "file": "correct_l3_32768.json",
+      "error": "response diverges from /tmp/tmp.fBkFAZRjNs/correct_cold_32768.ans at char 0 (length 59 vs 39): expected '6338c21c, ed7f69f2, 1bea883b, 2c7ceabf\\n', got '\\n\\n6338c21c, ed7f69f2, 1bea883b, 2c7ceabf\\nuser\\nassistant\\n\\n\\n6'"
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "server": "sglang",
+  "model": "qwen3.8-flash-next",
+  "gpu": "unknown",
+  "single_user": [
+    {
+      "prompt_idx": 0,
+      "avg_tps": 89.2,
+      "runs": [
+        89.2
+      ]
+    },
+    {
+      "prompt_idx": 1,
+      "avg_tps": 85.2,
+      "runs": [
+        85.2
+      ]
+    },
+    {
+      "prompt_idx": 2,
+      "avg_tps": 92.1,
+      "runs": [
+        92.1
+      ]
+    }
+  ],
+  "concurrent": [
+    {
+      "concurrency": 3,
+      "completed": 3,
+      "total_tokens": 18646,
+      "wall_seconds": 96.625,
+      "aggregate_tps": 193.0,
+      "per_request_tps": 64.3
+    },
+    {
+      "concurrency": 6,
+      "completed": 6,
+      "total_tokens": 35909,
+      "wall_seconds": 111.858,
+      "aggregate_tps": 321.0,
+      "per_request_tps": 53.5
+    }
+  ]
+}

@@ -1,0 +1,210 @@
+{
+  "label": "official",
+  "model": "qwen3.8-27b",
+  "total": "17/20",
+  "coding": "5/8",
+  "math": "7/7",
+  "general": "5/5",
+  "problems": [
+    {
+      "id": "code_01_two_sum",
+      "category": "coding",
+      "passed": false,
+      "detail": "Traceback (most recent call last):\n  File \"/tmp/tmpj_foc_36.py\", line 24, in <module>\n    assert sorted(two_sum([-1,0,1,2], 1)) == [0,3]\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError\n",
+      "content": "\n\n```python\ndef two_sum(nums: list[int], target: int) -> list[int]:\n    \"\"\"\n    Return the indices of the two numbers in `nums` that add up to `target`.\n\n    Uses a hash map for O(n) time complexity.\n    Each input has exactly one solution, and the same element is not used twice.\n    \"\"\"\n    seen: dict[int, int] = {}  # value -> index\n\n    for i, num in enumerate(nums):\n        complement = target - num\n        if complement in seen:\n            return [seen[complement], i]\n        seen[num] = i\n\n    # Unreachable given the problem guarantee of exactly one solution.\n    raise ValueError(\"No two-sum pair found\")\n```\n\n**How it works:**\n\n| Step | `num` | `complement` | `seen` (before check) | Result |\n|------|-------|--------------|-----------------------|--------|\n| 0 | 2 | 7 | `{}` | store `{2: 0}` |\n| 1 | 7 | 2 | `{2: 0}` | **found!** → `[0, 1]` |\n\n**Complexity:**\n- **Time:** O(n) — single pass, each dict lookup/insert is O(1) average.\n- **Space:** O(n) — the `seen` dictionary holds at most n entries.\n\n**Why the \"no same element twice\" rule is satisfied:** we check the map *before* inserting the current element, so a number can never pair with itself.\n\n**Example usage:**\n\n```python\nprint(two_sum([2, 7, 11, 15], 9))   # [0, 1]\nprint(two_sum([3, 2, 4], 6))         # [1, 2]\nprint(two_sum([3, 3], 6))            # [0, 1]\n```",
+      "reasoning_len": 700,
+      "tokens": 600,
+      "elapsed": 14.38
+    },
+    {
+      "id": "code_02_longest_palindrome",
+      "category": "coding",
+      "passed": true,
+      "detail": "",
+      "content": "\n\n```python\ndef longest_palindrome(s: str) -> str:\n    \"\"\"Return the longest palindromic substring of s.\n    \n    Uses the \"expand around center\" technique: every palindrome has a center,\n    which is either a single character (odd-length palindrome) or the gap\n    between two characters (even-length palindrome). We try all 2n-1 centers\n    and expand outward while the characters match.\n    \n    Time:  O(n^2)\n    Space: O(1)  (excluding the output slice)\n    \"\"\"\n    if not s:\n        return \"\"\n\n    start = 0          # start index of the best palindrome found so far\n    max_len = 1        # its length\n\n    def expand(left: int, right: int) -> tuple[int, int]:\n        \"\"\"Expand outward from (left, right) while characters match.\n        Returns (start_index, length) of the resulting palindrome.\"\"\"\n        while left >= 0 and right < len(s) and s[left] == s[right]:\n            left -= 1\n            right += 1\n        # After the loop, left/right are one past the palindrome boundaries\n        return left + 1, right - left - 1\n\n    for i in range(len(s)):\n        # Odd-length palindrome centered at i\n        l1, len1 = expand(i, i)\n        # Even-length palindrome centered between i and i+1\n        l2, len2 = expand(i, i + 1)\n\n        if len1 > max_len:\n            start, max_len = l1, len1\n        if len2 > max_len:\n            start, max_len = l2, len2\n\n    return s[start:start + max_len]\n```\n\n### How it works\n\n| Step | Detail |\n|------|--------|\n| **Centers** | A palindrome of odd length is centered on one character; one of even length is centered between two characters. That gives `2n − 1` possible centers. |\n| **Expand** | For each center, walk outward (`left--`, `right++`) as long as `s[left] == s[right]`. The moment they differ (or we hit an edge), the palindrome is `[left+1 … right-1]`. |\n| **Track best** | Keep the start index and length of the longest palindrome seen so far. |\n\n### Quick sanity checks\n\n```python\nassert longest_palindrome(\"babad\") in (\"bab\", \"ab",
+      "reasoning_len": 3231,
+      "tokens": 1907,
+      "elapsed": 40.73
+    },
+    {
+      "id": "code_03_merge_k_sorted",
+      "category": "coding",
+      "passed": true,
+      "detail": "",
+      "content": "\n\n```python\nimport heapq\nfrom typing import List\n\n\ndef merge_k_sorted(lists: list[list[int]]) -> list[int]:\n    \"\"\"\n    Merge k sorted lists into a single sorted list.\n\n    Uses a min-heap of size at most k, giving O(N log k) time\n    where N is the total number of elements across all lists.\n\n    Args:\n        lists: A list of k sorted (ascending) integer lists.\n\n    Returns:\n        A single sorted list containing all elements.\n    \"\"\"\n    # Seed the heap with the first element of each non-empty list.\n    # Each entry is (value, list_index, position_in_list).\n    heap: list[tuple[int, int, int]] = []\n    for i, lst in enumerate(lists):\n        if lst:\n            heapq.heappush(heap, (lst[0], i, 0))\n\n    result: list[int] = []\n\n    while heap:\n        val, list_idx, pos = heapq.heappop(heap)\n        result.append(val)\n\n        # If there's a next element in the same list, push it.\n        if pos + 1 < len(lists[list_idx]):\n            heapq.heappush(heap, (lists[list_idx][pos + 1], list_idx, pos + 1))\n\n    return result\n```\n\n## How it works\n\n1. **Seed the heap** – For each non-empty inner list, push its first element along with the list index and position (0). The heap now holds at most *k* entries.\n\n2. **Repeatedly extract the minimum** – Pop the smallest `(value, list_idx, pos)`, append `value` to the result, and if that list has more elements, push the next one.\n\n3. **Termination** – The heap is empty once every element from every list has been consumed.\n\n## Complexity\n\n| | |\n|---|---|\n| **Time** | O(N log k) — N total elements, each pushed/popped once, heap size ≤ k |\n| **Space** | O(k) for the heap + O(N) for the output |\n\n## Quick sanity check\n\n```python\nprint(merge_k_sorted([[1, 4, 7], [2, 5, 8], [3, 6, 9]]))\n# [1, 2, 3, 4, 5, 6, 7, 8, 9]\n\nprint(merge_k_sorted([[1, 3], [], [2]]))\n# [1, 2, 3]\n\nprint(merge_k_sorted([]))\n# []\n```\n\nThe heap-based approach is preferred over simply concatenating and sorting (O(N log N)) because it exploits the fact that each input",
+      "reasoning_len": 1810,
+      "tokens": 1099,
+      "elapsed": 23.81
+    },
+    {
+      "id": "code_04_lru_cache",
+      "category": "coding",
+      "passed": true,
+      "detail": "",
+      "content": "\n\n# LRU Cache — O(1) Implementation\n\nThe key insight is combining two data structures:\n\n| Structure | Role |\n|-----------|------|\n| **Hash map** (`dict`) | O(1) key → node lookup |\n| **Doubly linked list** | O(1) reorder / evict by recency |\n\nA dummy head and tail node eliminate all edge-case checks.\n\n```python\nclass Node:\n    \"\"\"A node in the doubly-linked list.\"\"\"\n    __slots__ = (\"key\", \"value\", \"prev\", \"next\")\n\n    def __init__(self, key: int = 0, value: int = 0):\n        self.key = key\n        self.value = value\n        self.prev: Node | None = None\n        self.next: Node | None = None\n\n\nclass LRUCache:\n    \"\"\"\n    Least-Recently-Used cache with O(1) get and put.\n\n    Internally maintains:\n      • self.cache  – dict[int, Node]  for O(1) lookup\n      • self.head / self.tail – dummy sentinels of a doubly-linked list\n        ordered from most-recently-used (head side) to\n        least-recently-used (tail side).\n    \"\"\"\n\n    def __init__(self, capacity: int):\n        if capacity <= 0:\n            raise ValueError(\"capacity must be a positive integer\")\n        self.capacity = capacity\n        self.cache: dict[int, Node] = {}\n\n        # Dummy sentinels:  head <-> ... <-> tail\n        self.head = Node()\n        self.tail = Node()\n        self.head.next = self.tail\n        self.tail.prev = self.head\n\n    # ------------------------------------------------------------------\n    # Public API\n    # ------------------------------------------------------------------\n\n    def get(self, key: int) -> int:\n        \"\"\"Return the value for *key*, or -1 if absent. Marks key as most-recently-used.\"\"\"\n        node = self.cache.get(key)\n        if node is None:\n            return -1\n        # Promote to most-recently-used\n        self._move_to_head(node)\n        return node.value\n\n    def put(self, key: int, value: int) -> None:\n        \"\"\"Insert or update *key*. Evicts the LRU entry if capacity is exceeded.\"\"\"\n        if key in self.cache:\n            # Update existing entry and pro",
+      "reasoning_len": 1300,
+      "tokens": 1647,
+      "elapsed": 36.71
+    },
+    {
+      "id": "code_05_word_break",
+      "category": "coding",
+      "passed": false,
+      "detail": "Traceback (most recent call last):\n  File \"/tmp/tmpkmn8cbh_.py\", line 33, in <module>\n    assert word_break(\"\", [\"a\"]) == True\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError\n",
+      "content": "\n\n```python\ndef word_break(s: str, word_dict: list[str]) -> bool:\n    \"\"\"\n    Return True if s can be segmented into one or more words from word_dict.\n    Words in the dictionary may be reused.\n\n    Uses bottom-up dynamic programming:\n      dp[i] is True if s[0:i] can be fully segmented into dictionary words.\n    \"\"\"\n    if not s:\n        return False\n\n    word_set = set(word_dict)\n    n = len(s)\n    max_word_len = max(len(w) for w in word_set)\n\n    # dp[i] == True  ⟹  s[0:i] is segmentable\n    dp = [False] * (n + 1)\n    dp[0] = True  # empty prefix is trivially segmentable (base case)\n\n    for i in range(1, n + 1):\n        # Only look back as far as the longest word in the dictionary\n        for j in range(max(0, i - max_word_len), i):\n            if dp[j] and s[j:i] in word_set:\n                dp[i] = True\n                break\n\n    return dp[n]\n```\n\n### How it works\n\n| Step | Detail |\n|------|--------|\n| **Base case** | `dp[0] = True` — the empty prefix needs no words. |\n| **Transition** | For each position `i`, check every possible split point `j` (limited to `max_word_len` back). If `dp[j]` is already `True` **and** the substring `s[j:i]` is in the dictionary, then `dp[i] = True`. |\n| **Answer** | `dp[n]` tells us whether the entire string `s[0:n]` is segmentable. |\n\n### Complexity\n\n- **Time:** O(n · m) where *n* = `len(s)` and *m* = length of the longest word in `word_dict` (the inner loop is bounded by `m`, and each membership check is O(1) via the set).\n- **Space:** O(n) for the DP array + O(|word_dict|) for the set.\n\n### Quick examples\n\n```python\n>>> word_break(\"leetcode\", [\"leet\", \"code\"])\nTrue\n\n>>> word_break(\"applepenapple\", [\"apple\", \"pen\"])\nTrue\n\n>>> word_break(\"catsandog\", [\"cats\", \"dog\", \"sand\", \"and\", \"cat\"])\nFalse\n```",
+      "reasoning_len": 3626,
+      "tokens": 1522,
+      "elapsed": 33.76
+    },
+    {
+      "id": "code_06_serialize_tree",
+      "category": "coding",
+      "passed": true,
+      "detail": "",
+      "content": "\n\n```python\nclass TreeNode:\n    def __init__(self, val=0, left=None, right=None):\n        self.val = val\n        self.left = left\n        self.right = right\n\n\ndef serialize(root: TreeNode | None) -> str:\n    \"\"\"Serialize a binary tree to a string using pre-order traversal.\n\n    Null nodes are represented by '#'.\n    Example:  1 -> 2 -> 3  becomes  \"1,2,#,#,3,#,#\"\n    \"\"\"\n    if root is None:\n        return \"#\"\n    return f\"{root.val},{serialize(root.left)},{serialize(root.right)}\"\n\n\ndef deserialize(data: str) -> TreeNode | None:\n    \"\"\"Reconstruct a binary tree from its serialized string.\n\n    Expects the format produced by serialize().\n    \"\"\"\n    tokens = iter(data.split(\",\"))\n\n    def build() -> TreeNode | None:\n        val = next(tokens)\n        if val == \"#\":\n            return None\n        node = TreeNode(int(val))\n        node.left = build()\n        node.right = build()\n        return node\n\n    return build()\n```\n\n**How it works**\n\n| Step | Detail |\n|---|---|\n| **Serialize** | Pre-order (root → left → right) DFS. Every `None` child is emitted as `#`, so the structure is fully recoverable. Values are joined with `,`. |\n| **Deserialize** | Split the string on `,` into a token iterator. A recursive `build()` consumes one token per call: `#` → `None`, otherwise create a `TreeNode` and recursively build its left then right subtree. |\n\n**Quick round-trip check**\n\n```python\nif __name__ == \"__main__\":\n    #        1\n    #       / \\\n    #      2   3\n    #     /     \\\n    #    4       5\n\n    root = TreeNode(1,\n                    TreeNode(2, TreeNode(4)),\n                    TreeNode(3, None, TreeNode(5)))\n\n    s = serialize(root)\n    print(s)          # \"1,2,4,#,#,#,3,#,5,#,#\"\n\n    restored = deserialize(s)\n\n    # Verify structure matches\n    def dump(node, depth=0):\n        if node is None:\n            return\n        print(\"  \" * depth + str(node.val))\n        dump(node.left, depth + 1)\n        dump(node.right, depth + 1)\n\n    dump(restored)\n    # 1\n    #   2\n    #  ",
+      "reasoning_len": 2767,
+      "tokens": 1374,
+      "elapsed": 30.42
+    },
+    {
+      "id": "code_07_min_window",
+      "category": "coding",
+      "passed": true,
+      "detail": "",
+      "content": "\n\n```python\nfrom collections import Counter\n\n\ndef min_window(s: str, t: str) -> str:\n    \"\"\"\n    Returns the minimum window substring of `s` that contains all characters\n    in `t` (including duplicates). Returns \"\" if no such window exists.\n\n    Uses a sliding window (two-pointer) approach:\n      - Expand `right` to grow the window until all required chars are covered.\n      - Shrink `left` to find the smallest valid window.\n    Time:  O(|s| + |t|)   Space: O(|s| + |t|)\n    \"\"\"\n    if not s or not t:\n        return \"\"\n\n    t_freq = Counter(t)\n    required = len(t_freq)          # number of *unique* chars we must satisfy\n\n    window_counts: dict[str, int] = {}\n    formed = 0                      # how many unique chars currently meet their required count\n\n    left = 0\n    min_len = float(\"inf\")\n    min_left = 0\n\n    for right in range(len(s)):\n        char = s[right]\n        window_counts[char] = window_counts.get(char, 0) + 1\n\n        # Did this character just reach the required frequency?\n        if char in t_freq and window_counts[char] == t_freq[char]:\n            formed += 1\n\n        # While the window is valid, try to shrink it from the left\n        while formed == required:\n            # Record the best window found so far\n            window_size = right - left + 1\n            if window_size < min_len:\n                min_len = window_size\n                min_left = left\n\n            # Remove the leftmost character from the window\n            left_char = s[left]\n            window_counts[left_char] -= 1\n            if left_char in t_freq and window_counts[left_char] < t_freq[left_char]:\n                formed -= 1\n            left += 1\n\n    return \"\" if min_len == float(\"inf\") else s[min_left : min_left + min_len]\n\n\n# ---------- quick sanity checks ----------\nif __name__ == \"__main__\":\n    assert min_window(\"ADOBECODEBANC\", \"ABC\") == \"BANC\"\n    assert min_window(\"a\", \"a\") == \"a\"\n    assert min_window(\"a\", \"aa\") == \"\"\n    assert min_window(\"aa\", \"aa\") == \"aa\"\n",
+      "reasoning_len": 2841,
+      "tokens": 1520,
+      "elapsed": 33.73
+    },
+    {
+      "id": "code_08_nested_iterator",
+      "category": "coding",
+      "passed": false,
+      "detail": "timeout",
+      "content": "\n\n```python\nclass NestedIterator:\n    \"\"\"Iterator that flattens a nested list of integers.\n\n    The nested list is a Python list where each element is either\n    an int or another (possibly nested) list.\n    Example: [1, [2, [3]], 4] → yields 1, 2, 3, 4\n    \"\"\"\n\n    def __init__(self, nested_list):\n        # Use a stack for lazy, iterative flattening (avoids recursion limits).\n        # Push elements in reverse order so the first element is on top.\n        self.stack = []\n        for item in reversed(nested_list):\n            self.stack.append(item)\n\n    def has_next(self) -> bool:\n        \"\"\"Return True if there is at least one more integer to yield.\"\"\"\n        while self.stack:\n            top = self.stack[-1]\n            if isinstance(top, int):\n                return True\n            elif top:          # non-empty list → contains at least one element\n                return True\n            else:              # empty list → discard and keep looking\n                self.stack.pop()\n        return False\n\n    def next(self) -> int:\n        \"\"\"Return the next integer in the flattened sequence.\n\n        Raises StopIteration if no integers remain.\n        \"\"\"\n        while self.stack:\n            item = self.stack.pop()\n            if isinstance(item, int):\n                return item\n            # item is a list: push its elements back (reversed) so\n            # they are processed in their original order.\n            for sub_item in reversed(item):\n                self.stack.append(sub_item)\n        raise StopIteration\n```\n\n**How it works**\n\n| Step | Mechanism |\n|---|---|\n| **`__init__`** | Pushes every top-level element onto a stack in *reverse* order, so the leftmost element sits on top and is visited first. |\n| **`next`** | Pops the top of the stack. If it's an `int`, return it. If it's a `list`, push that list's elements back onto the stack (again in reverse) and keep popping until an `int` is found. |\n| **`has_next`** | Peeks at the top of the stack. An `int` or",
+      "reasoning_len": 7447,
+      "tokens": 2676,
+      "elapsed": 58.83
+    },
+    {
+      "id": "math_01_mississippi",
+      "category": "math",
+      "passed": true,
+      "detail": "",
+      "content": "\n\n34650",
+      "reasoning_len": 425,
+      "tokens": 272,
+      "elapsed": 6.67
+    },
+    {
+      "id": "math_02_power_mod",
+      "category": "math",
+      "passed": true,
+      "detail": "",
+      "content": "\n\n2",
+      "reasoning_len": 231,
+      "tokens": 145,
+      "elapsed": 3.46
+    },
+    {
+      "id": "math_03_triangle_area",
+      "category": "math",
+      "passed": true,
+      "detail": "",
+      "content": "\n\n6",
+      "reasoning_len": 257,
+      "tokens": 97,
+      "elapsed": 2.33
+    },
+    {
+      "id": "math_04_probability",
+      "category": "math",
+      "passed": true,
+      "detail": "",
+      "content": "\n\n# Probability of Exactly 2 Aces in 5 Cards\n\n## Setting Up the Count\n\nA standard deck has **4 aces** and **48 non-aces**. To get exactly 2 aces in 5 cards, I need:\n\n- Choose 2 aces from the 4 available: $\\binom{4}{2}$\n- Choose 3 non-aces from the 48 available: $\\binom{48}{3}$\n- Total ways to choose any 5 cards: $\\binom{52}{5}$\n\n$$P = \\frac{\\binom{4}{2}\\binom{48}{3}}{\\binom{52}{5}}$$\n\n## Computing Each Term\n\n$$\\binom{4}{2} = 6$$\n\n$$\\binom{48}{3} = \\frac{48 \\times 47 \\times 46}{3!} = \\frac{103{,}776}{6} = 17{,}296$$\n\n$$\\binom{52}{5} = \\frac{52 \\times 51 \\times 50 \\times 49 \\times 48}{5!} = \\frac{311{,}875{,}200}{120} = 2{,}598{,}960$$\n\n## Assembling and Simplifying\n\n$$P = \\frac{6 \\times 17{,}296}{2{,}598{,}960} = \\frac{103{,}776}{2{,}598{,}960}$$\n\nFactoring to find the GCD:\n\n- $103{,}776 = 2^5 \\times 3 \\times 23 \\times 47$\n- $2{,}598{,}960 = 2^4 \\times 3 \\times 5 \\times 7^2 \\times 13 \\times 17$\n\n$$\\gcd = 2^4 \\times 3 = 48$$\n\n$$P = \\frac{103{,}776 \\div 48}{2{,}598{,}960 \\div 48} = \\frac{2{,}162}{54{,}145}$$\n\nSince $2{,}162 = 2 \\times 23 \\times 47$ and $54{,}145 = 5 \\times 7^2 \\times 13 \\times 17$ share no common factors, this is fully reduced.\n\n$$\\boxed{\\dfrac{2162}{54145}}$$",
+      "reasoning_len": 1945,
+      "tokens": 1947,
+      "elapsed": 41.65
+    },
+    {
+      "id": "math_05_cubic",
+      "category": "math",
+      "passed": true,
+      "detail": "",
+      "content": "\n\n## Solving $x^3 - 6x^2 + 11x - 6 = 0$\n\n**Step 1: Find a rational root.**\n\nTesting $x = 1$: $\\;1 - 6 + 11 - 6 = 0$ ✓\n\nSo $(x-1)$ is a factor.\n\n**Step 2: Divide out $(x-1)$** (synthetic division):\n\n$$x^3 - 6x^2 + 11x - 6 = (x-1)(x^2 - 5x + 6)$$\n\n**Step 3: Factor the quadratic.**\n\n$$x^2 - 5x + 6 = (x-2)(x-3)$$\n\n**Step 4: Write the full factorization.**\n\n$$(x-1)(x-2)(x-3) = 0$$\n\n**Solutions:**\n\n$$\\boxed{1, 2, 3}$$",
+      "reasoning_len": 643,
+      "tokens": 524,
+      "elapsed": 12.4
+    },
+    {
+      "id": "math_06_series",
+      "category": "math",
+      "passed": true,
+      "detail": "",
+      "content": "\n\n# Computing the Sum of Reciprocal Factorials\n\n## Computing Each Term\n\n| Term | Value |\n|------|-------|\n| 1/1! | 1.000000000000 |\n| 1/2! | 0.500000000000 |\n| 1/3! | 0.166666666667 |\n| 1/4! | 0.041666666667 |\n| 1/5! | 0.008333333333 |\n| 1/6! | 0.001388888889 |\n| 1/7! | 0.000198412698 |\n| 1/8! | 0.000024801587 |\n| 1/9! | 0.000002755732 |\n| 1/10! | 0.000000275573 |\n\n## Adding Step by Step\n\n$$1 + 0.5 = 1.5$$\n$$+ 0.166667 = 1.666667$$\n$$+ 0.041667 = 1.708333$$\n$$+ 0.008333 = 1.716667$$\n$$+ 0.001389 = 1.718056$$\n$$+ 0.000198 = 1.718254$$\n$$+ 0.000025 = 1.718279$$\n$$+ 0.000003 = 1.718282$$\n$$+ 0.000000 = 1.718282$$\n\n## Result\n\n$$\\boxed{1.718282}$$",
+      "reasoning_len": 1471,
+      "tokens": 1720,
+      "elapsed": 38.47
+    },
+    {
+      "id": "math_07_last_two_digits",
+      "category": "math",
+      "passed": true,
+      "detail": "",
+      "content": "\n\n49",
+      "reasoning_len": 663,
+      "tokens": 408,
+      "elapsed": 7.51
+    },
+    {
+      "id": "gen_01_languages",
+      "category": "general",
+      "passed": true,
+      "detail": "",
+      "content": "\n\nFORTRAN\nCOBOL\nLISP\nPascal\nC",
+      "reasoning_len": 399,
+      "tokens": 178,
+      "elapsed": 4.22
+    },
+    {
+      "id": "gen_02_chemistry",
+      "category": "general",
+      "passed": true,
+      "detail": "",
+      "content": "\n\nH₂SO₄",
+      "reasoning_len": 108,
+      "tokens": 38,
+      "elapsed": 0.95
+    },
+    {
+      "id": "gen_03_translate",
+      "category": "general",
+      "passed": true,
+      "detail": "",
+      "content": "\n\nLe chat était assis sur le tapis.",
+      "reasoning_len": 923,
+      "tokens": 241,
+      "elapsed": 5.74
+    },
+    {
+      "id": "gen_04_haiku",
+      "category": "general",
+      "passed": true,
+      "detail": "",
+      "content": "\n\nFunction calls itself\nuntil the base case stops it—\nmirrors in the dark",
+      "reasoning_len": 917,
+      "tokens": 303,
+      "elapsed": 7.26
+    },
+    {
+      "id": "gen_05_tcp_udp",
+      "category": "general",
+      "passed": true,
+      "detail": "",
+      "content": "\n\nTCP is a connection-oriented protocol that guarantees reliable, ordered delivery of data through handshakes, acknowledgments, and retransmissions. UDP is a connectionless protocol that sends data without establishing a connection or guaranteeing delivery, making it faster but less reliable.",
+      "reasoning_len": 851,
+      "tokens": 228,
+      "elapsed": 5.44
+    }
+  ]
+}

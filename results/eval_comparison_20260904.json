@@ -1,0 +1,196 @@
+{
+  "aeon": {
+    "total": "16/20",
+    "coding": "4/8",
+    "math": "7/7",
+    "general": "5/5"
+  },
+  "official": {
+    "total": "17/20",
+    "coding": "5/8",
+    "math": "7/7",
+    "general": "5/5"
+  },
+  "per_problem": [
+    {
+      "id": "code_01_two_sum",
+      "category": "coding",
+      "aeon": "FAIL",
+      "official": "FAIL",
+      "status": "same",
+      "aeon_time": 2.76,
+      "official_time": 14.38
+    },
+    {
+      "id": "code_02_longest_palindrome",
+      "category": "coding",
+      "aeon": "PASS",
+      "official": "PASS",
+      "status": "same",
+      "aeon_time": 6.72,
+      "official_time": 40.73
+    },
+    {
+      "id": "code_03_merge_k_sorted",
+      "category": "coding",
+      "aeon": "PASS",
+      "official": "PASS",
+      "status": "same",
+      "aeon_time": 7.59,
+      "official_time": 23.81
+    },
+    {
+      "id": "code_04_lru_cache",
+      "category": "coding",
+      "aeon": "FAIL",
+      "official": "PASS",
+      "status": "official_better",
+      "aeon_time": 8.38,
+      "official_time": 36.71
+    },
+    {
+      "id": "code_05_word_break",
+      "category": "coding",
+      "aeon": "FAIL",
+      "official": "FAIL",
+      "status": "same",
+      "aeon_time": 7.7,
+      "official_time": 33.76
+    },
+    {
+      "id": "code_06_serialize_tree",
+      "category": "coding",
+      "aeon": "PASS",
+      "official": "PASS",
+      "status": "same",
+      "aeon_time": 13.3,
+      "official_time": 30.42
+    },
+    {
+      "id": "code_07_min_window",
+      "category": "coding",
+      "aeon": "PASS",
+      "official": "PASS",
+      "status": "same",
+      "aeon_time": 7.24,
+      "official_time": 33.73
+    },
+    {
+      "id": "code_08_nested_iterator",
+      "category": "coding",
+      "aeon": "FAIL",
+      "official": "FAIL",
+      "status": "same",
+      "aeon_time": 11.73,
+      "official_time": 58.83
+    },
+    {
+      "id": "math_01_mississippi",
+      "category": "math",
+      "aeon": "PASS",
+      "official": "PASS",
+      "status": "same",
+      "aeon_time": 1.45,
+      "official_time": 6.67
+    },
+    {
+      "id": "math_02_power_mod",
+      "category": "math",
+      "aeon": "PASS",
+      "official": "PASS",
+      "status": "same",
+      "aeon_time": 0.85,
+      "official_time": 3.46
+    },
+    {
+      "id": "math_03_triangle_area",
+      "category": "math",
+      "aeon": "PASS",
+      "official": "PASS",
+      "status": "same",
+      "aeon_time": 0.64,
+      "official_time": 2.33
+    },
+    {
+      "id": "math_04_probability",
+      "category": "math",
+      "aeon": "PASS",
+      "official": "PASS",
+      "status": "same",
+      "aeon_time": 7.85,
+      "official_time": 41.65
+    },
+    {
+      "id": "math_05_cubic",
+      "category": "math",
+      "aeon": "PASS",
+      "official": "PASS",
+      "status": "same",
+      "aeon_time": 2.56,
+      "official_time": 12.4
+    },
+    {
+      "id": "math_06_series",
+      "category": "math",
+      "aeon": "PASS",
+      "official": "PASS",
+      "status": "same",
+      "aeon_time": 5.74,
+      "official_time": 38.47
+    },
+    {
+      "id": "math_07_last_two_digits",
+      "category": "math",
+      "aeon": "PASS",
+      "official": "PASS",
+      "status": "same",
+      "aeon_time": 2.02,
+      "official_time": 7.51
+    },
+    {
+      "id": "gen_01_languages",
+      "category": "general",
+      "aeon": "PASS",
+      "official": "PASS",
+      "status": "same",
+      "aeon_time": 1.3,
+      "official_time": 4.22
+    },
+    {
+      "id": "gen_02_chemistry",
+      "category": "general",
+      "aeon": "PASS",
+      "official": "PASS",
+      "status": "same",
+      "aeon_time": 0.29,
+      "official_time": 0.95
+    },
+    {
+      "id": "gen_03_translate",
+      "category": "general",
+      "aeon": "PASS",
+      "official": "PASS",
+      "status": "same",
+      "aeon_time": 1.16,
+      "official_time": 5.74
+    },
+    {
+      "id": "gen_04_haiku",
+      "category": "general",
+      "aeon": "PASS",
+      "official": "PASS",
+      "status": "same",
+      "aeon_time": 2.84,
+      "official_time": 7.26
+    },
+    {
+      "id": "gen_05_tcp_udp",
+      "category": "general",
+      "aeon": "PASS",
+      "official": "PASS",
+      "status": "same",
+      "aeon_time": 1.24,
+      "official_time": 5.44
+    }
+  ]
+}
