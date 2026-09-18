@@ -18,6 +18,15 @@ DIGEST_SERVER_ACTIVE=false
 cleanup() {
     local status=$?
     trap - EXIT
+    if [[ "${status}" -ne 0 ]]; then
+        # Keep the Phase 4 diagnostic logs next to the result JSON for post-mortem.
+        local base="${RESULT_FILE%.json}" name
+        for name in correct_cold_server.log correct_restore_server.log; do
+            if [[ -f "${RUNDIR}/${name}" ]]; then
+                cp "${RUNDIR}/${name}" "${base}.${name}" 2>/dev/null || true
+            fi
+        done
+    fi
     rm -rf "${RUNDIR}"
     if [[ "${DIGEST_SERVER_ACTIVE}" == "true" ]]; then
         log "Restoring server without page digest logging after benchmark failure..."
@@ -194,8 +203,10 @@ PYEOF
 }
 
 # ---------------------------------------------------------------
-# Phase 4: HiCache L1->L3 correctness (cold prefill -> in-process cache
-# flush -> SSD restore with marker, cache-coverage, and page-digest validation)
+# Phase 4: HiCache L1->L3 correctness (cold prefill -> pre-flush revisit so
+# every probe page meets the write_through_selective two-hit admission ->
+# in-process cache flush -> SSD restore with marker, cache-coverage, and
+# page/transfer-digest validation)
 # ---------------------------------------------------------------
 CORRECT_TOKENS="${CORRECT_TOKENS:-32768 131072 196608}"
 CORRECT_CONC_TOKENS="${CORRECT_CONC_TOKENS:-32768 65536 98304}"
@@ -304,6 +315,12 @@ w(f"sess_prompt_fresh_{suf}.txt", body + "\n\n" + tail + question)
 PYEOF
 }
 
+# True when a failed L3 restore's only marker defect is omission, so the
+# probe gets an immediate L1 replay for variance classification.
+needs_replay() { # $1=metrics JSON path
+    python3 "${SCRIPT_DIR}/hicache_digest_check.py" needs-replay "$1" 2>/dev/null
+}
+
 correctness_bench() {
     log ""
     log "=== Phase 4: HiCache L1->L3 Correctness ==="
@@ -327,6 +344,12 @@ correctness_bench() {
         log "  target ${target} tokens: cold greedy prefill (writes L1->L2->L3)"
         BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 run_one "unused" "${RUNDIR}/correct_cold_${target}.json" "" --prompt-file "${PF[$target]}" --max-tokens 48 --ignore-eos --no-thinking --full-text-out "${RUNDIR}/correct_cold_${target}.ans"
         log_metrics_line "${RUNDIR}/correct_cold_${target}.json" "cold"
+        # Revisit immediately, before later large probes can evict this prefix
+        # from L2. This second access qualifies selective write-through while
+        # the first request remains the reported cold measurement.
+        log "  target ${target} tokens: immediate revisit for selective write-through admission"
+        BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 run_one "unused" "${RUNDIR}/correct_revisit_${target}.json" "" --prompt-file "${PF[$target]}" --max-tokens 48 --ignore-eos --no-thinking --full-text-out "${RUNDIR}/correct_revisit_${target}.ans"
+        log_metrics_line "${RUNDIR}/correct_revisit_${target}.json" "revisit"
         log ""
     done
 
@@ -354,6 +377,23 @@ correctness_bench() {
     log "  concurrent cold batch wall $(python3 -c "print(f'{(${end_ns}-${start_ns})/1e9:.1f}')")s"
     for tag in "${CC_TAG[@]}"; do
         log_metrics_line "${RUNDIR}/correctcc_cold_${tag}.json" "cold ${tag}"
+    done
+    log ""
+
+    log "  concurrent pre-flush revisit batch: second access for selective write-through admission"
+    pids=()
+    start_ns=$(date +%s%N)
+    for i in "${!CC_TAG[@]}"; do
+        ( BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 run_one "unused" "${RUNDIR}/correctcc_revisit_${CC_TAG[$i]}.json" "" --prompt-file "${CC_PF[$i]}" --max-tokens 48 --ignore-eos --no-thinking ) &
+        pids+=($!)
+    done
+    for pid in "${pids[@]}"; do
+        wait "$pid" 2>/dev/null || true
+    done
+    end_ns=$(date +%s%N)
+    log "  concurrent revisit batch wall $(python3 -c "print(f'{(${end_ns}-${start_ns})/1e9:.1f}')")s"
+    for tag in "${CC_TAG[@]}"; do
+        log_metrics_line "${RUNDIR}/correctcc_revisit_${tag}.json" "revisit ${tag}"
     done
     log ""
 
@@ -385,9 +425,6 @@ correctness_bench() {
 
     log "  waiting ${CORRECT_WRITE_SETTLE_SECONDS}s for write-through storage..."
     sleep "${CORRECT_WRITE_SETTLE_SECONDS}"
-    if [[ "${CORRECT_DIGESTS}" == "true" ]]; then
-        cp "${PROJECT_DIR}/.sglang.log" "${RUNDIR}/correct_cold_server.log"
-    fi
     # /flush_cache drops L1/L2 radix and recurrent state but leaves the L3
     # storage backend intact, so the next requests must restore from SSD.
     log "  flushing L1/L2 in process so warm runs must restore from L3 (SSD)..."
@@ -395,6 +432,12 @@ correctness_bench() {
     curl --fail-with-body -sS -X POST \
         "http://127.0.0.1:${PORT}/flush_cache?timeout=${CORRECT_FLUSH_TIMEOUT}" >&2
     sleep "${CORRECT_FLUSH_SETTLE_SECONDS}"
+    if [[ "${CORRECT_DIGESTS}" == "true" ]]; then
+        # Digest hashing can keep the write-through queue draining for minutes;
+        # snapshot the cold log only after the flush proves storage idle so
+        # every cold write digest is inside the copy and no restore read is.
+        cp "${PROJECT_DIR}/.sglang.log" "${RUNDIR}/correct_cold_server.log"
+    fi
     log ""
 
     for target in ${CORRECT_TOKENS}; do
@@ -428,6 +471,20 @@ correctness_bench() {
     done
     log ""
 
+    # A first marker omission may be batch-sensitive generation, not cache
+    # corruption: replay immediately (state is now in L1) and let the final
+    # result classify it against the digest evidence.
+    for i in "${!CC_TAG[@]}"; do
+        tag="${CC_TAG[$i]}"
+        if needs_replay "${RUNDIR}/correctcc_l3_${tag}.json"; then
+            log "  concurrent ${tag}: marker omission on first L3 restore; immediate L1 replay"
+            BENCH_MIN_CACHE_HIT_RATIO="${CORRECT_CONC_MIN_HIT_RATIO}" BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 \
+                run_one "unused" "${RUNDIR}/correctcc_replay_${tag}.json" "" --prompt-file "${CC_PF[$i]}" --max-tokens 48 --ignore-eos --no-thinking --must-match-markers
+            log_metrics_line "${RUNDIR}/correctcc_replay_${tag}.json" "L1 replay ${tag}"
+        fi
+    done
+    log ""
+
     log "  session-churn restore runs: ${#SE_TAG[@]} sessions (${SE_TAG[*]})"
     for tag in "${SE_TAG[@]}"; do
         sys_f="${SE_SYS[$tag]}"
@@ -436,90 +493,37 @@ correctness_bench() {
             run_one "unused" "${RUNDIR}/session_l3_${tag}.json" "" --prompt-file "${pf}" --system-file "${sys_f}" --max-tokens 80 --ignore-eos --no-thinking \
             --must-match-markers
         log_metrics_line "${RUNDIR}/session_l3_${tag}.json" "L3 restore ${tag}"
+        if needs_replay "${RUNDIR}/session_l3_${tag}.json"; then
+            log "  session ${tag}: marker omission on first L3 restore; immediate L1 replay"
+            BENCH_MIN_CACHE_HIT_RATIO="${CORRECT_SESSION_MIN_HIT}" BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 \
+                run_one "unused" "${RUNDIR}/session_replay_${tag}.json" "" --prompt-file "${pf}" --system-file "${sys_f}" --max-tokens 80 --ignore-eos --no-thinking \
+                --must-match-markers
+            log_metrics_line "${RUNDIR}/session_replay_${tag}.json" "L1 replay ${tag}"
+        fi
     done
     log ""
 
+    # Snapshot the restore-phase log before any restart truncates it; it is the
+    # digest-check input and the failure post-mortem copy.
+    if [[ -f "${PROJECT_DIR}/.sglang.log" ]]; then
+        cp "${PROJECT_DIR}/.sglang.log" "${RUNDIR}/correct_restore_server.log"
+    fi
+
     # Corruption detector: compare post-flush read hashes to the cold server's
-    # write hashes for the same storage key and component. Also reject
-    # inconsistent repeated writes or reads. Reads of old shared template pages
-    # can be unpaired; newly generated UUID probe pages must produce paired keys.
+    # write hashes for the same storage key and component, and require every
+    # KV/mamba host<->device transfer digest to be exact (kv_k, kv_v,
+    # kv_scale_k, and kv_scale_v included). Also reject inconsistent repeated
+    # writes or reads. Reads of old shared template pages can be unpaired;
+    # newly generated UUID probe pages must produce paired keys.
     if [[ "${CORRECT_DIGESTS}" == "true" ]]; then
-        python3 - "${RUNDIR}/correct_cold_server.log" "${PROJECT_DIR}/.sglang.log" "${RUNDIR}/hicache_digest_check.json" >&2 <<'PYEOF'
-import json, re, sys
-cold_log, restore_log, out_path = sys.argv[1:]
-pat_page = re.compile(r"HiCache page digest direction=(\w+) pool=(\S+) component=(\S+) key=(\S+) host_page=(\d+) bytes=(\d+) sha256=([0-9a-f]{64})")
-pat_v1 = re.compile(r"HiCache storage tensor digest direction=(\w+) key=(\S+) bytes=(\d+) sha256=([0-9a-f]{64})")
-
-def load(path):
-    records = {}
-    lines = 0
-    try:
-        with open(path, errors="replace") as f:
-            for line in f:
-                if "HiCache" not in line or "digest" not in line:
-                    continue
-                m = pat_page.search(line)
-                if m:
-                    direction = m.group(1)
-                    identity = (m.group(2), m.group(3), m.group(4))
-                    digest = m.group(7)
-                else:
-                    m = pat_v1.search(line)
-                    if not m:
-                        continue
-                    direction = m.group(1)
-                    identity = ("v1", "", m.group(2))
-                    digest = m.group(4)
-                lines += 1
-                records.setdefault(direction, {}).setdefault(identity, set()).add(digest)
-    except FileNotFoundError:
-        pass
-    return records, lines
-
-cold, cold_lines = load(cold_log)
-restore, restore_lines = load(restore_log)
-writes = cold.get("write", {})
-reads = restore.get("read", {})
-paired = sorted(set(writes) & set(reads), key=str)
-write_conflicts = {k: v for k, v in writes.items() if len(v) != 1}
-read_conflicts = {k: v for k, v in reads.items() if len(v) != 1}
-mismatched = {k: {"write": writes[k], "read": reads[k]}
-              for k in paired if writes[k] != reads[k]}
-
-def rows(items):
-    return [{"pool": k[0], "component": k[1], "key": k[2],
-             **{name: sorted(values) for name, values in detail.items()}}
-            for k, detail in sorted(items.items(), key=lambda item: str(item[0]))[:50]]
-
-def conflict_rows(items, direction):
-    return [{"pool": k[0], "component": k[1], "key": k[2],
-             direction: sorted(values)}
-            for k, values in sorted(items.items(), key=lambda item: str(item[0]))[:50]]
-
-ok = bool(paired) and not write_conflicts and not read_conflicts and not mismatched
-out = {
-    "ok": ok,
-    "cold_digest_lines": cold_lines,
-    "restore_digest_lines": restore_lines,
-    "write_keys": len(writes),
-    "read_keys": len(reads),
-    "paired_keys": len(paired),
-    "unpaired_read_keys": len(set(reads) - set(writes)),
-    "write_conflict_count": len(write_conflicts),
-    "read_conflict_count": len(read_conflicts),
-    "mismatch_count": len(mismatched),
-    "write_conflicts": conflict_rows(write_conflicts, "writes"),
-    "read_conflicts": conflict_rows(read_conflicts, "reads"),
-    "mismatched_keys": rows(mismatched),
-}
-if not ok:
-    out["error"] = (f"digest check failed: paired={len(paired)}, "
-                    f"write_conflicts={len(write_conflicts)}, "
-                    f"read_conflicts={len(read_conflicts)}, mismatched={len(mismatched)}")
-with open(out_path, "w") as f:
-    json.dump(out, f, indent=2)
-print(json.dumps({k: v for k, v in out.items() if not isinstance(v, list)}), file=sys.stderr)
-PYEOF
+        if python3 "${SCRIPT_DIR}/hicache_digest_check.py" check \
+            "${RUNDIR}/correct_cold_server.log" \
+            "${RUNDIR}/correct_restore_server.log" \
+            "${RUNDIR}/hicache_digest_check.json"; then
+            log "  digest check passed (storage pairing complete, transfer digests exact)"
+        else
+            log "  WARNING: digest check failed; failures recorded in hicache_digest_check.json"
+        fi
         log ""
         log "  restarting server without page digest logging..."
         bash "${SCRIPT_DIR}/stop_sglang.sh" >&2
@@ -565,9 +569,11 @@ for phase in ${PHASES//,/ }; do
     esac
 done
 
-python3 - "${RUNDIR}" "${RESULT_FILE}" "${SERVED_NAME}" <<'PYEOF'
+python3 - "${RUNDIR}" "${RESULT_FILE}" "${SERVED_NAME}" "${SCRIPT_DIR}" <<'PYEOF'
 import glob, json, os, re, sys
-rundir, out_file, model = sys.argv[1], sys.argv[2], sys.argv[3]
+rundir, out_file, model, scripts_dir = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+sys.path.insert(0, scripts_dir)
+import hicache_digest_check as diag
 
 def load(tag, pi, rep):
     f = os.path.join(rundir, f"{tag}_{pi}_{rep}.json")
@@ -641,6 +647,7 @@ for f in sorted(glob.glob(os.path.join(rundir, "correct_cold_*.json"))):
     tgt = m.group(1)
     correctness.append({"target_tokens": int(tgt),
                         "cold": rd(f"correct_cold_{tgt}.json"),
+                        "cold_revisit": rd(f"correct_revisit_{tgt}.json"),
                         "l3_restore": rd(f"correct_l3_{tgt}.json"),
                         "l1_hit": rd(f"correct_l1_{tgt}.json")})
 concurrent_correctness = []
@@ -651,7 +658,9 @@ for f in sorted(glob.glob(os.path.join(rundir, "correctcc_cold_*.json"))):
     mt = m.group(1)
     concurrent_correctness.append({"probe": mt,
                                    "cold": rd(f"correctcc_cold_{mt}.json"),
-                                   "l3_restore": rd(f"correctcc_l3_{mt}.json")})
+                                   "cold_revisit": rd(f"correctcc_revisit_{mt}.json"),
+                                   "l3_restore": rd(f"correctcc_l3_{mt}.json"),
+                                   "l1_replay": rd(f"correctcc_replay_{mt}.json")})
 session_churn = []
 for f in sorted(glob.glob(os.path.join(rundir, "session_cold_*.json"))):
     m = re.fullmatch(r"session_cold_(\w+)\.json", os.path.basename(f))
@@ -660,24 +669,60 @@ for f in sorted(glob.glob(os.path.join(rundir, "session_cold_*.json"))):
     tag = m.group(1)
     session_churn.append({"session": tag,
                           "cold": rd(f"session_cold_{tag}.json"),
-                          "l3_restore": rd(f"session_l3_{tag}.json")})
+                          "l3_restore": rd(f"session_l3_{tag}.json"),
+                          "l1_replay": rd(f"session_replay_{tag}.json")})
+
+# A first L3 marker omission is generation variance only when storage plus
+# KV transfer digests are exact and the immediate L1 replay reproduced every
+# expected marker; anything else stays a hard failure.
+digests = rd("hicache_digest_check.json")
+variances = []
+variance_files = set()
+
+def note_variance(section, probe, metrics_file, metrics, replay):
+    variance = diag.classify_generation_variance(metrics, replay, digests)
+    if variance:
+        variance = {"section": section, "probe": probe,
+                    "metrics_file": metrics_file, **variance}
+        variances.append(variance)
+        variance_files.add(metrics_file)
+    return variance
+
+for entry in correctness:
+    tgt = entry["target_tokens"]
+    entry["variance"] = note_variance("correctness", f"target_{tgt}",
+                                      f"correct_l3_{tgt}.json",
+                                      entry["l3_restore"], entry["l1_hit"])
+for entry in concurrent_correctness:
+    mt = entry["probe"]
+    entry["variance"] = note_variance("concurrent_correctness", mt,
+                                      f"correctcc_l3_{mt}.json",
+                                      entry["l3_restore"], entry["l1_replay"])
+for entry in session_churn:
+    tag = entry["session"]
+    entry["variance"] = note_variance("session_churn", tag,
+                                      f"session_l3_{tag}.json",
+                                      entry["l3_restore"], entry["l1_replay"])
 
 failures = []
 for f in sorted(glob.glob(os.path.join(rundir, "*.json"))):
+    name = os.path.basename(f)
     try:
         metrics = json.load(open(f))
     except Exception as exc:
-        failures.append({"file": os.path.basename(f), "error": str(exc)})
+        failures.append({"file": name, "error": str(exc)})
+        continue
+    if name in variance_files:
         continue
     if not metrics.get("ok"):
         failures.append({
-            "file": os.path.basename(f),
+            "file": name,
             "error": metrics.get("error", "request failed"),
         })
 
 result = {
     "server": "sglang",
-    "harness": 4,
+    "harness": 5,
     "model": model,
     "single_user": single,
     "concurrent": conc,
@@ -685,12 +730,13 @@ result = {
     "correctness": correctness,
     "concurrent_correctness": concurrent_correctness,
     "session_churn": session_churn,
-    "digest_check": rd("hicache_digest_check.json"),
+    "digest_check": digests,
+    "variances": variances,
     "failures": failures,
 }
 with open(out_file, "w") as f:
     json.dump(result, f, indent=2)
-print(json.dumps({k: v for k, v in result.items() if k != "single_user"} | {"single_user_summary": [{"prompt_idx": s["prompt_idx"], "avg_decode_tps": s["avg_decode_tps"], "avg_prefill_tps": s["avg_prefill_tps"], "avg_ttft_s": s["avg_ttft_s"]} for s in single]}, indent=2), file=sys.stderr)
+print(json.dumps({k: v for k, v in result.items() if k != "single_user"} | {"single_user_summary": [{"prompt_idx": s["prompt_idx"], "avg_decode_tps": s["avg_decode_tps"], "avg_prefill_tps": s["avg_prefill_tps"], "avg_ttft_s": s["avg_ttft_s"]} for s in single], "variance_count": len(variances)}, indent=2), file=sys.stderr)
 if failures:
     raise SystemExit(1)
 PYEOF
