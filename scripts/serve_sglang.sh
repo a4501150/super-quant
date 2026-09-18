@@ -91,7 +91,7 @@ ARGS=(
 )
 
 [[ -n "${SGLANG_ATTENTION_BACKEND:-}" ]] && ARGS+=(--attention-backend "$SGLANG_ATTENTION_BACKEND")
-[[ -n "${SGLANG_TP_SIZE:-}" && "${SGLANG_TP_SIZE:-1}" != "1" ]] && ARGS+=(--tp "$SGLANG_TP_SIZE")
+[[ -n "${SGLANG_TP_SIZE:-}" && "${SGLANG_TP_SIZE:-1}" != "1" ]] && ARGS+=(--tp-size "$SGLANG_TP_SIZE")
 [[ -n "${SGLANG_KV_CACHE_DTYPE:-}" ]] && ARGS+=(--kv-cache-dtype "$SGLANG_KV_CACHE_DTYPE")
 [[ -n "${SGLANG_FP8_GEMM_BACKEND:-}" ]] && ARGS+=(--fp8-gemm-backend "$SGLANG_FP8_GEMM_BACKEND")
 # Expert-axis sharding for checkpoints whose per-rank MoE intermediate fails
