@@ -776,7 +776,7 @@ def build_calibration_dataset(
         }
         examined_units = 0
         cursor = 0
-        # Long rows (see configs/*/modelopt.json long_sequences): tokenized
+        # Long rows (see the recipe calibration section's long_sequences): tokenized
         # and packed *within this domain* at each long length, then deducted
         # from the domain's normal (sequence_length) quota so the total stays
         # at token_budget. rows_per_domain * n_domains must be a multiple of

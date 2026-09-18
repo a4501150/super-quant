@@ -66,7 +66,7 @@ def our_counterpart(orca_name):
     NOTE: the offload producer writes ``weight_scale_2`` as the DEQUANT-side
     value (small, 1/global-multiplier). CT/vLLM NVFP4 checkpoints must store
     the QUANT-side global multiplier (kernel alpha = 1/weight_global_scale),
-    so the repacked tree additionally needs invert_global_scales.py before
+    so the repacked tree must invert those values to the quant side before
     serving, or the served model rescales every expert by gs^2 (garbage
     logits, NaN logprobs) while offline dequant-by-division hides it.
     """
