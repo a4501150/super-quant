@@ -1,4 +1,4 @@
-.PHONY: all setup setup-sglang setup-vllm download convert calibrate recalibrate imatrix sensitivity quantize quantize-nvfp4 convert-nvfp4 bench-llamacpp bench-sglang compare compare-md serve serve-llama stop serve-vllm stop-vllm awq-prescale awq-convert awq-imatrix awq-sensitivity awq-quantize awq-all test clean help
+.PHONY: all setup setup-sglang setup-vllm download convert calibrate-corpus recalibrate-corpus calibrate recalibrate package-calibration-corpus imatrix sensitivity quantize quantize-nvfp4 convert-nvfp4 bench-llamacpp bench-sglang compare compare-md serve serve-llama stop serve-vllm stop-vllm awq-prescale awq-convert awq-imatrix awq-sensitivity awq-quantize awq-all test clean help
 
 SHELL := /bin/bash
 PROJECT_DIR := $(shell pwd)
@@ -33,9 +33,11 @@ AWQ_CALIBRATION_DIR := $(call model_var,AWQ_CALIBRATION_DIR)
 AWQ_IMATRIX_MERGED := $(call model_var,AWQ_IMATRIX_MERGED)
 AWQ_TENSOR_OVERRIDES := $(call model_var,AWQ_TENSOR_OVERRIDES)
 AWQ_SENSITIVITY := $(call model_var,AWQ_SENSITIVITY)
+CALIBRATION_CORPUS_DIR := $(call model_var,CALIBRATION_CORPUS_DIR)
 CALIBRATION_DIR := $(call model_var,CALIBRATION_DIR)
 CALIBRATION_DOMAINS := $(call model_var,CALIBRATION_DOMAINS)
 IMATRIX_WEIGHTS := $(call model_var,IMATRIX_WEIGHTS)
+CORPUS_ARCHIVE ?= $(PROJECT_DIR)/calibration-corpus-v1.tar.gz
 IMATRIX_CONTEXT_SIZE := $(call model_var,IMATRIX_CONTEXT_SIZE)
 QUANT_TYPES_VAR := $(call model_var,QUANT_TYPES)
 
@@ -51,8 +53,11 @@ help:
 	@echo "Pipeline stages:"
 	@echo "  make download        Download the active model to the Hugging Face cache"
 	@echo "  make convert         Convert the active model to source-precision GGUF"
-	@echo "  make calibrate       Build complete multi-domain calibration samples"
-	@echo "  make recalibrate     Rebuild calibration samples"
+	@echo "  make calibrate-corpus Build the shared tokenizer-neutral source corpus"
+	@echo "  make recalibrate-corpus Rebuild the shared source corpus from pinned datasets"
+	@echo "  make calibrate       Build model-specific calibration from the shared corpus"
+	@echo "  make recalibrate     Rebuild model-specific calibration from the shared corpus"
+	@echo "  make package-calibration-corpus Build the deterministic corpus release archive"
 	@echo "  make imatrix         Generate and merge per-domain importance matrices"
 	@echo "  make sensitivity     Measure tensor sensitivity and regenerate overrides"
 	@echo "  make quantize        Build configured GGUF quantization types"
@@ -111,11 +116,34 @@ download:
 convert:
 	@$(UV) bash $(SCRIPTS)/02_convert_to_gguf.sh
 
+calibrate-corpus:
+	@$(UV) python3 $(SRC)/prepare_calibration.py \
+		--corpus-dir $(CALIBRATION_CORPUS_DIR) \
+		--corpus-only
+
+recalibrate-corpus:
+	@$(UV) python3 $(SRC)/prepare_calibration.py \
+		--corpus-dir $(CALIBRATION_CORPUS_DIR) \
+		--corpus-only \
+		--force-corpus
+
 calibrate:
-	@$(UV) python3 $(SRC)/prepare_calibration.py --output-dir $(CALIBRATION_DIR) --model-id $(CALIBRATION_MODEL_ID)
+	@$(UV) python3 $(SRC)/prepare_calibration.py \
+		--corpus-dir $(CALIBRATION_CORPUS_DIR) \
+		--output-dir $(CALIBRATION_DIR) \
+		--model-id $(CALIBRATION_MODEL_ID)
 
 recalibrate:
-	@$(UV) python3 $(SRC)/prepare_calibration.py --output-dir $(CALIBRATION_DIR) --model-id $(CALIBRATION_MODEL_ID) --force
+	@$(UV) python3 $(SRC)/prepare_calibration.py \
+		--corpus-dir $(CALIBRATION_CORPUS_DIR) \
+		--output-dir $(CALIBRATION_DIR) \
+		--model-id $(CALIBRATION_MODEL_ID) \
+		--force
+
+package-calibration-corpus:
+	@$(UV) python3 $(SCRIPTS)/package_calibration_corpus.py \
+		$(CALIBRATION_CORPUS_DIR) \
+		$(CORPUS_ARCHIVE)
 
 imatrix:
 	@$(UV) bash $(SCRIPTS)/03_generate_imatrix_gpu.sh

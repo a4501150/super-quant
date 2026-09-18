@@ -126,9 +126,21 @@ The stages produce:
 6. UD-prefixed GGUF quants that use both the importance matrix and overrides.
 7. Throughput, perplexity, and output-distribution comparison results.
 
-JSONL is the canonical calibration format. It retains complete conversations, message roles, tool definitions, source revisions, and stable record IDs. The `.txt` files are deterministic renders of the same records for llama.cpp tools. A manifest records the build policy, source counts, tokenizer revision, deduplication counts, and artifact hashes under `calibration/<MODEL_DIR>/`. Completed source extracts are cached under `calibration/.source-cache/`, so an interrupted local rebuild does not download them again.
+JSONL is the canonical calibration format. It retains complete conversations, message roles, tool definitions, source revisions, and stable record IDs. Calibration has two stages:
 
-Each model must generate or download its own model-scoped calibration build. Do not copy a completed calibration directory, text render, holdout, or manifest to another model, even when both models use the same source datasets.
+1. `calibration/corpus-v1/` is a shared tokenizer-neutral parent corpus. Its four domain JSONL files preserve complete conversations and unsplit documents from the pinned source revisions. Its manifest contains source and extraction policy, counts, and artifact hashes, but no model, tokenizer, token count, or rendered text.
+2. `calibration/<MODEL_DIR>/` is a model-scoped build selected from that parent with the target tokenizer. Its `.txt` files are deterministic renders for llama.cpp tools, and its manifest records the parent digest, tokenizer revision, token budgets, deduplication, and artifact hashes.
+
+Build the parent once, then derive any configured model build from it:
+
+```bash
+make calibrate-corpus
+MODEL_DIR=<model> make calibrate
+```
+
+`make recalibrate` only rebuilds the model-scoped selection. `make recalibrate-corpus` explicitly reloads the pinned source datasets and replaces the shared parent. Package a validated parent reproducibly with `make package-calibration-corpus`; override `CORPUS_ARCHIVE` to select another output path. Interrupted parent extraction uses `calibration/.corpus-source-cache/`, while a valid parent lets all model builds run without the original Hugging Face datasets.
+
+Each model must generate or download its own model-scoped calibration build. Do not copy a completed calibration directory, text render, holdout, importance matrix, or manifest to another model. The shared parent corpus is the reusable source; model-specific selection, rendering, and quantization artifacts are not reusable.
 
 A verified Qwen3.8-Flash-Next calibration build is available as a release asset. Extract it from the repository root before running quantization on another host:
 
@@ -138,6 +150,15 @@ tar -xzf Qwen3.8-Flash-Next-calibration-v1.tar.gz -C calibration
 ```
 
 Its SHA-256 is `9cc7338e5a8495a87b71eddb5449cd0cf8d880fe5d11daceac01577e3f29c698`.
+
+The shared tokenizer-neutral corpus is available as a separate release asset. It contains 52,913 complete records across the four domains and extracts to `calibration/corpus-v1/`:
+
+```bash
+curl -L https://github.com/a4501150/super-quant/releases/download/calibration-corpus-v1/calibration-corpus-v1.tar.gz -o calibration-corpus-v1.tar.gz
+tar -xzf calibration-corpus-v1.tar.gz -C calibration
+```
+
+Its SHA-256 is `c905a8725d19bdfcd1c57e9f89ffcb129b642a82adde77334b862ad791a93991`.
 
 `make all` runs the normal pipeline with the existing tensor override file. It does not regenerate sensitivity data. Run `make sensitivity` when the model or override policy changes.
 
