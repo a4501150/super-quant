@@ -58,6 +58,18 @@ if [[ ! -d "$MODEL_PATH" ]]; then
     exit 1
 fi
 
+if [[ -n "${SGLANG_PLE_SAFETENSORS_DIR:-}" ]]; then
+    if [[ ! -d "${SGLANG_PLE_SAFETENSORS_DIR}" ]]; then
+        echo "ERROR: PLE checkpoint not found: ${SGLANG_PLE_SAFETENSORS_DIR}" >&2
+        exit 1
+    fi
+    if [[ ! -f "${SGLANG_PLE_SAFETENSORS_DIR}/model.safetensors.index.json" ]]; then
+        echo "ERROR: PLE checkpoint index not found: ${SGLANG_PLE_SAFETENSORS_DIR}/model.safetensors.index.json" >&2
+        exit 1
+    fi
+    export SGLANG_QWEN4_PLE_SAFETENSORS="${SGLANG_PLE_SAFETENSORS_DIR}"
+fi
+
 ensure_sglang
 
 echo "=== Starting SGLang Server ==="
@@ -160,11 +172,7 @@ fi
 [[ -n "${SGLANG_REASONING_PARSER:-}" ]] && ARGS+=(--reasoning-parser "$SGLANG_REASONING_PARSER")
 [[ -n "${SGLANG_TOOL_CALL_PARSER:-}" ]] && ARGS+=(--tool-call-parser "$SGLANG_TOOL_CALL_PARSER")
 
-# PLE mmap offload for Qwen4-Exp models
-if [[ -n "${SGLANG_PLE_MMAP_DIR:-}" && -d "${SGLANG_PLE_MMAP_DIR}" ]]; then
-    export SGLANG_QWEN4_PLE_MMAP="${SGLANG_PLE_MMAP_DIR}"
-    echo "PLE mmap: $SGLANG_PLE_MMAP_DIR"
-fi
+[[ -n "${SGLANG_PLE_SAFETENSORS_DIR:-}" ]] && echo "PLE safetensors: $SGLANG_PLE_SAFETENSORS_DIR"
 
 # Cap kernel-JIT parallelism: FlashInfer autotune spawns one cicc per candidate
 # kernel; uncapped on all cores it is a documented host-RAM OOM path.

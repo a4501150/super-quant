@@ -14,7 +14,7 @@ Config-driven quantization and serving pipeline for hybrid language models. The 
 - The qualified SM120 SGLang stack uses CUDA 13.4 nightly PyTorch and revision-matched native wheels. Stable PyTorch only publishes older CUDA runtimes; do not substitute its cu130 wheels for this production environment.
 - Keep each qualified, dated SGLang production branch unchanged. For an upstream update, create a new dated branch from `origin/main`, apply only the local patches that upstream still lacks, then rebuild the revision-keyed wheels and repeat qualification.
 - SGLang uses `.sglang.pid`/`.sglang.log`; vLLM uses `.vllm.pid`/`.vllm.log`. They are independent processes but normally compete for the same configured port and GPU.
-- `Qwen3.8-Flash-Next` requires its PLE mmap directory. Generate it with `src/extract_ple.py`; otherwise the 51 GB PLE table consumes GPU or host memory through the normal loader.
+- `Qwen3.8-Flash-Next` reads its 95.4 GiB BF16 PLE table directly from the selected safetensors checkpoint. Checkpoint prefetch must skip the direct PLE source files instead of warming the full table, and the direct source must not be combined with SGLang's built-in pinned/file PLE offload.
 - FlashInfer GDN prefill on SM120 requires CUDA 13 or newer. Production uses FlashInfer for GDN prefill, decode, and verify.
 - The production HiCache log reports the 15 GB L2 host tier. The L3 file tier is capped separately at 50 GB, starts eviction near 45 GB, and uses selective write-through to avoid persisting one-use branches.
 - HiCache L3 restores through L2 before data reaches the GPU. Missing L3 suffix pages cause recomputation, not foreign state restoration.

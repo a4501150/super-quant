@@ -11,7 +11,7 @@ The repository has two main roles:
 
 | Configuration | Current use |
 | --- | --- |
-| `Qwen3.8-Flash-Next` | Default production serving with SGLang, PLE SSD offload, and HiCache |
+| `Qwen3.8-Flash-Next` | Default production serving with SGLang, direct PLE checkpoint reads, and HiCache |
 | `Qwen3.8-27B-AEON` | GGUF, AWQ-UD, NVFP4, llama.cpp, and SGLang workflows |
 | `Qwen3.6-27B-AEON` | GGUF workflows and published artifacts |
 
@@ -73,7 +73,7 @@ The current `Qwen3.8-Flash-Next` configuration uses:
 - FP8 E4M3 KV cache.
 - Breakable CUDA graphs.
 - A 262,144-token context limit and six running requests.
-- PLE mmap offload from `~/models/ple/Qwen3.8-Flash-Next-NVFP4`.
+- Direct, on-demand PLE reads from the selected safetensors checkpoint, without a second 95.4 GiB table copy.
 - A 12 GB HiCache host tier and a file-backed SSD tier capped at 50 GB.
 
 The SSD tier starts eviction at 90% of its cap and keeps 50 GB of disk space free. Its default directory is `~/models/hicache`.
@@ -231,7 +231,6 @@ Generated calibration data is stored in `calibration/<MODEL_DIR>/` and ignored b
 - NVFP4: `~/models/nvfp4`
 - Hugging Face downloads: `~/.cache/huggingface/hub`
 - HiCache SSD data: `~/models/hicache`
-- PLE mmap data: `~/models/ple`
 
 Run `make help` for the main target list.
 
