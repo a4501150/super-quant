@@ -43,7 +43,8 @@ def main():
 
     src, dst = a.src, a.dst
     dst.mkdir(parents=True, exist_ok=True)
-    index = json.load(open(src / "model.safetensors.index.json"))
+    with open(src / "model.safetensors.index.json") as f:
+        index = json.load(f)
     wm = index["weight_map"]
 
     # The engine's loader strips the VLM prefix (``model.language_model.X``
@@ -61,9 +62,8 @@ def main():
             return False
         if meta["dtype"] != "BF16":
             return False
-        return (t.endswith("_proj.weight")
-                or t.endswith("experts.gate_up_proj")
-                or t.endswith("experts.down_proj"))
+        return t.endswith((
+            "_proj.weight", "experts.gate_up_proj", "experts.down_proj"))
 
     for f in sorted(src.glob("*.safetensors")):
         hdr_cache[f.name] = read_header(f)
@@ -117,7 +117,8 @@ def main():
         raise SystemExit("index rebuild lost/gained tensors")
     index["weight_map"] = new_wm
     index["metadata"]["total_size"] = total
-    json.dump(index, open(dst / "model.safetensors.index.json", "w"), indent=1)
+    with open(dst / "model.safetensors.index.json", "w") as f:
+        json.dump(index, f, indent=1)
     for m in ("config.json", "generation_config.json", "hf_quant_config.json",
               "tokenizer.json", "tokenizer_config.json", "chat_template.jinja",
               "preprocessor_config.json"):

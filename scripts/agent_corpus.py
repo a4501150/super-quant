@@ -20,14 +20,26 @@ Requires the server to run with --enable-auto-tool-choice
 """
 import argparse
 import json
+import os
+import signal
 import subprocess
-import sys
 import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 API = "http://127.0.0.1:{port}/v1/chat/completions"
+
+
+def load_json(path):
+    with open(path) as f:
+        return json.load(f)
+
+
+def dump_json(value, path):
+    with open(path, "w") as f:
+        json.dump(value, f)
+
 
 SYSTEM = (
     "You are an engineering agent. You accomplish tasks by writing and "
@@ -81,14 +93,19 @@ def exec_bash(cmd, cwd, timeout=30):
         out, err = p.communicate(timeout=timeout)
         return out + (("\nSTDERR:\n" + err) if err else "")
     except subprocess.TimeoutExpired:
-        import os as _os, signal as _sig
         try:
-            _os.killpg(p.pid, _sig.SIGKILL)
+            os.killpg(p.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
         p.communicate()
         return f"ERROR: {timeout}s timeout"
     except Exception as e:  # noqa: BLE001
+        if p.poll() is None:
+            try:
+                os.killpg(p.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            p.communicate()
         return f"ERROR: {e}"
 
 
@@ -121,7 +138,7 @@ def run_task(port, cat, task, agentic, max_turns=None, dump_to=None):
                "finish_reason": ch.get("finish_reason"),
                "completion_tokens": r.get("usage", {}).get("completion_tokens")}
         if dump_to:
-            json.dump(row, open(dump_to, "w"))
+            dump_json(row, dump_to)
         return row
     msgs = [{"role": "system", "content": SYSTEM},
             {"role": "user", "content": task}]
@@ -157,7 +174,7 @@ def run_task(port, cat, task, agentic, max_turns=None, dump_to=None):
            "text": "\n".join(transcript), "turns": turns,
            "finish_reason": fr, "completion_tokens": toks}
     if dump_to:  # per-doc partial: peekable mid-run, salvageable on hang
-        json.dump(row, open(dump_to, "w"))
+        dump_json(row, dump_to)
     return row
 
 
@@ -183,9 +200,9 @@ def main():
                 lambda i: run_task(a.port, *SEEDS[i],
                                    dump_to=str(out / f"doc_{i}.json")),
                 idxs))
-    rows = [json.load(open(out / f"doc_{i}.json"))
+    rows = [load_json(out / f"doc_{i}.json")
             for i in range(len(SEEDS))]   # assemble: merged view of disk
-    json.dump(rows, open(out / "corpus.json", "w"))
+    dump_json(rows, out / "corpus.json")
     for r in rows:
         print(f"[agent] {r['category']:>9} finish={r['finish_reason']} "
               f"toks={r['completion_tokens']} turns={r['turns']}")

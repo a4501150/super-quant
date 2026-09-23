@@ -24,7 +24,7 @@ def load_latest_results(results_dir: str) -> dict:
 
 def strip_model_prefix(name: str, model_name: str) -> str:
     prefix = f"{model_name}-"
-    return name[len(prefix):] if name.startswith(prefix) else name
+    return name.removeprefix(prefix)
 
 
 def fmt_speed(val, stddev=None):

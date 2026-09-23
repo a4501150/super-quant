@@ -36,6 +36,16 @@ BUCKETS = [("near-tie", lambda m: m < 0.5), ("moderate", lambda m: 0.5 <= m < 2)
            ("confident", lambda m: 2 <= m < 5), ("certain", lambda m: m >= 5)]
 
 
+def load_json(path):
+    with open(path) as f:
+        return json.load(f)
+
+
+def dump_json(value, path):
+    with open(path, "w") as f:
+        json.dump(value, f)
+
+
 def post(port, path, payload, timeout=3600):
     req = urllib.request.Request(
         API.format(port=port) + path,
@@ -203,13 +213,13 @@ def main():
                        "secs": time.time() - t0}
 
         if (run / "corpus.json").exists():
-            corpus = json.load(open(run / "corpus.json"))
+            corpus = load_json(run / "corpus.json")
             print(f"[gen] reusing corpus: {len(corpus)} rows", flush=True)
         else:
             with ThreadPoolExecutor(max_workers=len(SEEDS)) as ex:
                 rows = list(ex.map(gen_seed, enumerate(SEEDS)))
             corpus = [r for _, r in sorted(rows)]
-            json.dump(corpus, open(run / "corpus.json", "w"))
+            dump_json(corpus, run / "corpus.json")
         gp = greedy_prompts()
         assert len(gp) >= 200, len(gp)
 
@@ -218,21 +228,21 @@ def main():
 
         with ThreadPoolExecutor(max_workers=16) as ex:
             greedy = list(ex.map(gen_greedy, gp[:200]))
-        json.dump(greedy, open(run / "greedy_bf16.json", "w"))
+        dump_json(greedy, run / "greedy_bf16.json")
         sc = score_corpus(a.port, corpus, a.engine)
-        json.dump(sc, open(run / "score_bf16.json", "w"))
+        dump_json(sc, run / "score_bf16.json")
         print(f"[gen] corpus positions scored: {len(sc)}")
         return
 
     if a.phase == "score":
         label = a.label or sys.exit("--label required")
-        corpus = json.load(open(run / "corpus.json"))
+        corpus = load_json(run / "corpus.json")
         sc = score_corpus(a.port, corpus, a.engine)
-        json.dump(sc, open(run / f"score_{label}.json", "w"))
+        dump_json(sc, run / f"score_{label}.json")
         # divmed vs BF16 greedy (concurrent streams; divs stay index-aligned)
         from concurrent.futures import ThreadPoolExecutor
 
-        greedy = json.load(open(run / "greedy_bf16.json"))
+        greedy = load_json(run / "greedy_bf16.json")
 
         def one_div(g):
             ids = greedy_ids(a.port, g["prompt"], len(g["ids"]) or 1,
@@ -242,14 +252,14 @@ def main():
 
         with ThreadPoolExecutor(max_workers=16) as ex:
             divs = list(ex.map(one_div, greedy))
-        json.dump(divs, open(run / f"div_{label}.json", "w"))
+        dump_json(divs, run / f"div_{label}.json")
         print(f"[score] {label}: {len(sc)} positions, "
               f"divmed={statistics.median(divs)}")
         return
 
     # table phase
     run = Path(a.run)
-    bf16 = json.load(open(run / "score_bf16.json"))
+    bf16 = load_json(run / "score_bf16.json")
 
     def top(e):  # -> (logprob, token_id) or None for the no-context row
         return None if not e or e[0][0] is None else (e[0][0], e[0][1])
@@ -267,7 +277,7 @@ def main():
         label = f.stem.removeprefix("score_")
         if label == "bf16":
             continue
-        arm = json.load(open(f))
+        arm = load_json(f)
         agree = {n: 0 for n, _ in BUCKETS}
         tot = {n: 0 for n, _ in BUCKETS}
         hits = 0
@@ -286,8 +296,11 @@ def main():
             else:
                 agree[name] += 1
         div = run / f"div_{label}.json"
-        dm = int(statistics.median(json.load(open(div)))) if div.exists() else None
-        pct = lambda k: 100.0 * agree[k] / tot[k] if tot[k] else 0.0  # noqa: E731
+        dm = int(statistics.median(load_json(div))) if div.exists() else None
+
+        def pct(k, agree=agree, tot=tot):
+            return 100.0 * agree[k] / tot[k] if tot[k] else 0.0
+
         print(f"{label}: top1_agree={100.0 * hits / len(rows):.2f}%  "
               + "  ".join(f"{k[:4]}_disagree={pct(k):.2f}%" for k, _ in BUCKETS)
               + f"  divmed={dm}")

@@ -9,7 +9,6 @@ Usage:
 
 import argparse
 import json
-import math
 import re
 import subprocess
 import sys
@@ -17,7 +16,6 @@ import tempfile
 import textwrap
 import time
 from dataclasses import dataclass, field
-from fractions import Fraction
 from pathlib import Path
 
 import requests
@@ -379,7 +377,7 @@ def extract_code(content: str) -> str:
     cleaned = []
     for line in lines:
         stripped = line.strip()
-        if stripped.startswith(">>>") or stripped.startswith("..."):
+        if stripped.startswith((">>>", "...")):
             continue
         if stripped.startswith("print("):
             continue
@@ -399,7 +397,7 @@ def run_code_test(code: str, test_code: str) -> tuple[bool, str]:
         try:
             result = subprocess.run(
                 [sys.executable, f.name],
-                capture_output=True, text=True, timeout=30,
+                capture_output=True, text=True, timeout=30, check=False,
             )
             if result.returncode == 0:
                 return True, ""
@@ -424,7 +422,7 @@ def extract_number(text: str) -> str:
     boxed = re.findall(r'\\boxed\{([^}]+)\}', text)
     if boxed:
         return boxed[-1].strip()
-    answer_pat = re.findall(r'(?:answer|result|=)\s*[:is]*\s*\**\s*(-?[\d./]+)', last_lines, re.I)
+    answer_pat = re.findall(r'(?:answer|result|=)\s*[:is]*\s*\**\s*(-?[\d./]+)', last_lines, re.IGNORECASE)
     if answer_pat:
         return answer_pat[-1]
     fractions = re.findall(r'-?\d+/\d+', last_lines)
@@ -507,7 +505,7 @@ def run_eval(port: int, model: str, label: str, output_dir: str) -> dict:
             resp = query_model(p.prompt, port, model)
             content = resp["content"]
             passed, detail = grade_problem(p, content)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             content = ""
             resp = {"content": "", "reasoning": "", "tokens": 0, "elapsed": 0}
             passed = False

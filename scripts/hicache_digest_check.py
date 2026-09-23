@@ -271,7 +271,7 @@ def main(argv=None):
         try:
             with open(argv[1]) as f:
                 metrics = json.load(f)
-        except Exception:
+        except Exception:  # noqa: BLE001
             return 1
         return 0 if needs_replay(metrics) else 1
     raise SystemExit(f"unknown command: {command}")

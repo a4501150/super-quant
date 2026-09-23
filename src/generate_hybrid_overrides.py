@@ -11,11 +11,11 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from collections import defaultdict
 from datetime import datetime
-import shutil
 
 EDGE_FRACTION = 0.12
 
@@ -63,11 +63,14 @@ def read_tensor_names(model_path):
     result = subprocess.run(
         [
             "uv", "run", "python3", "-c",
-            f"import sys; sys.path.insert(0, '/home/jinyang/src/llama.cpp/gguf-py');"
-            f"import gguf; reader = gguf.GGUFReader('{model_path}');"
-            f"[print(t.name) for t in reader.tensors]",
+            (
+                "import sys; sys.path.insert(0, '/home/jinyang/src/llama.cpp/gguf-py');"
+                "import gguf; reader = gguf.GGUFReader(sys.argv[1]);"
+                "[print(t.name) for t in reader.tensors]"
+            ),
+            model_path,
         ],
-        capture_output=True, text=True,
+        capture_output=True, text=True, check=False,
     )
     if result.returncode != 0:
         print(f"ERROR: Failed to read tensor names: {result.stderr}")
@@ -86,7 +89,7 @@ def build_groups(tensor_names):
             if m:
                 mtp_blocks.add(int(m.group(1)))
 
-    skip_tensors = []
+    forced_f16_tensors = []
     mtp_tensors = []
     base_groups = defaultdict(list)
 
@@ -98,7 +101,7 @@ def build_groups(tensor_names):
 
         suffix = re.sub(r"^blk\.\d+\.", "", name)
         if suffix in FORCED_F16_SSM or suffix in FORCED_F16_SMALL:
-            skip_tensors.append(name)
+            forced_f16_tensors.append(name)
             continue
 
         base_groups[suffix].append(name)
@@ -125,18 +128,7 @@ def build_groups(tensor_names):
         else:
             groups[suffix] = names
 
-    forced_f16_tensors = []
-    for name in tensor_names:
-        suffix = re.sub(r"^blk\.\d+\.", "", name)
-        m = re.match(r"^blk\.(\d+)\.", name)
-        if m and int(m.group(1)) in mtp_blocks:
-            continue
-        if suffix in FORCED_F16_SSM or suffix in FORCED_F16_SMALL:
-            forced_f16_tensors.append(name)
-        elif not re.match(r"^blk\.\d+\.", name) and suffix in FORCED_F16_SMALL:
-            forced_f16_tensors.append(name)
-
-    return groups, skip_tensors, mtp_tensors, forced_f16_tensors
+    return groups, forced_f16_tensors, mtp_tensors
 
 
 def assign_level(kl_mean, group_name):
@@ -162,7 +154,7 @@ def main():
         sensitivity = json.load(f)
 
     tensor_names = read_tensor_names(args.model)
-    groups, skip_tensors, mtp_tensors, forced_f16 = build_groups(tensor_names)
+    groups, forced_f16, mtp_tensors = build_groups(tensor_names)
 
     lines = []
     lines.append("# Hybrid tensor overrides — sensitivity data + APEX research + MTP protection")
@@ -202,9 +194,8 @@ def main():
     content = "\n".join(lines) + "\n"
 
     override_count = sum(1 for l in lines if l and not l.startswith("#"))
-    total_tensors = sum(len(v) for v in groups.values())
 
-    print(f"Override summary:")
+    print("Override summary:")
     print(f"  f16:  {len(forced_f16)} tensors (SSM recurrence + norms)")
     print(f"  f16:  {len(mtp_tensors)} tensors (MTP)")
     for level_name in ["f16", "q8_0", "q6_k"]:
@@ -223,7 +214,7 @@ def main():
         return
 
     if os.path.exists(args.output):
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        ts = datetime.now().astimezone().strftime("%Y%m%d_%H%M%S")
         backup = f"{args.output}.{ts}.bak"
         shutil.copy2(args.output, backup)
         print(f"Backed up: {backup}")

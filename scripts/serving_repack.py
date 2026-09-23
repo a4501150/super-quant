@@ -39,6 +39,7 @@ import argparse
 import json
 import os
 import struct
+from contextlib import ExitStack
 from pathlib import Path
 
 from safetensors import safe_open
@@ -46,6 +47,23 @@ from safetensors.torch import save_file
 
 ES = {"BF16": 2, "F8_E4M3": 1, "F32": 4, "U8": 1, "I64": 8, "F16": 2,
       "I32": 4, "I8": 1, "F64": 8, "BOOL": 1, "UI8": 1}
+
+
+def load_json(path):
+    with open(path) as f:
+        return json.load(f)
+
+
+def dump_json(value, path, *, indent=None):
+    with open(path, "w") as f:
+        json.dump(value, f, indent=indent)
+
+
+def tensor_size(entry):
+    size = ES.get(entry["dtype"], 0)
+    for dimension in entry["shape"]:
+        size *= dimension
+    return size
 
 
 def read_header(path):
@@ -86,8 +104,8 @@ def main():
     a = ap.parse_args()
     a.dst.mkdir(parents=True, exist_ok=True)
 
-    owm = json.load(open(a.orca / "model.safetensors.index.json"))["weight_map"]
-    swm = json.load(open(a.slim / "model.safetensors.index.json"))["weight_map"]
+    owm = load_json(a.orca / "model.safetensors.index.json")["weight_map"]
+    swm = load_json(a.slim / "model.safetensors.index.json")["weight_map"]
     scanon = {}
     for t in swm:
         if not t.startswith("model.language_model."):
@@ -103,7 +121,7 @@ def main():
     n_stacked = 0
     for t in owm:
         c = canon(t)
-        if (c.endswith("experts.gate_up_proj") or c.endswith("experts.down_proj")) \
+        if c.endswith(("experts.gate_up_proj", "experts.down_proj")) \
                 and c.rsplit(".experts.", 1)[0] in our_mlp:
             n_stacked += 1   # our per-expert tensors replace this fused view
             continue
@@ -140,11 +158,7 @@ def main():
     extras = [e for e in extras if ".indexer." not in canon(e)]
 
     def osz(name):  # size of a picked-ours tensor
-        e = s_hdrs[swm[name]][name]
-        b = ES.get(e["dtype"], 0)
-        for d in e["shape"]:
-            b *= d
-        return b
+        return tensor_size(s_hdrs[swm[name]][name])
 
     # group by file to minimize shard opens
     orca_by_file = {}
@@ -156,7 +170,6 @@ def main():
     # destination file name = orca's file; our overlays for that file are
     # gathered across ALL our files, so stage them per destination file
     dest_overlay = {}  # orca_file -> {orca_name: (our_file, our_name)}
-    our_by_canon_file = {}
     for t, s in pick_ours.items():
         of = owm[t]
         dest_overlay.setdefault(of, {})[t] = (swm[s], s)
@@ -169,25 +182,25 @@ def main():
                 for t in orca_by_file[f]:
                     tensors[t] = sf.get_tensor(t)
             for t in orca_by_file[f]:
-                total += osz_orca(o_hdrs[f][t])
+                total += tensor_size(o_hdrs[f][t])
                 new_wm[t] = f
         if f in dest_overlay:
             cache = {}
-            for t, (of, on) in dest_overlay[f].items():
-                if of not in cache:
-                    cache[of] = safe_open(a.slim / of, framework="pt")
-                v = cache[of].get_tensor(on)
-                if (t.endswith("weight_scale")
-                        and v.ndim == 1 and v.dtype.is_floating_point):
-                    # compressed-tensors channel strategy stores scales as
-                    # [out, 1]; our export flattens them and sglang's
-                    # loader asserts on the shape mismatch.
-                    v = v.reshape(-1, 1)
-                tensors[t] = v
-                total += osz(on)
-                new_wm[t] = f
-            for sf in cache.values():
-                pass  # safetensors files need no explicit close here
+            with ExitStack() as stack:
+                for t, (of, on) in dest_overlay[f].items():
+                    if of not in cache:
+                        cache[of] = stack.enter_context(
+                            safe_open(a.slim / of, framework="pt"))
+                    v = cache[of].get_tensor(on)
+                    if (t.endswith("weight_scale")
+                            and v.ndim == 1 and v.dtype.is_floating_point):
+                        # compressed-tensors channel strategy stores scales as
+                        # [out, 1]; our export flattens them and sglang's
+                        # loader asserts on the shape mismatch.
+                        v = v.reshape(-1, 1)
+                    tensors[t] = v
+                    total += osz(on)
+                    new_wm[t] = f
         if tensors:
             save_file(tensors, str(a.dst / f), metadata={"format": "pt"})
             if os.environ.get("REPACK_CONSUME_ORCA") == "1":
@@ -212,10 +225,10 @@ def main():
         # tensor it can see but does not consume (skipped-scale branch); the
         # file rides along for provenance only.
 
-    index = json.load(open(a.orca / "model.safetensors.index.json"))
+    index = load_json(a.orca / "model.safetensors.index.json")
     index["weight_map"] = new_wm
     index["metadata"]["total_size"] = total
-    json.dump(index, open(a.dst / "model.safetensors.index.json", "w"), indent=1)
+    dump_json(index, a.dst / "model.safetensors.index.json", indent=1)
     for m in ("generation_config.json", "tokenizer.json",
               "tokenizer_config.json", "chat_template.jinja",
               "preprocessor_config.json", "video_preprocessor_config.json",
@@ -243,7 +256,7 @@ def main():
     #     paths do not match the per-expert child modules.
     #   - module keys/targets use the adopted model.language_model.layers.*
     #     prefix; our export names model.layers.*.
-    cfg = json.load(open(a.orca / "config.json"))
+    cfg = load_json(a.orca / "config.json")
     orca_ignore = cfg["quantization_config"].get("ignore", [])
     # vLLM's qwen4_exp model accepts only "full_attention" layer types
     # (it auto-detects QSA from indexer_n_heads); transformers' config
@@ -276,7 +289,7 @@ def main():
                 "zp_dtype": None}
     CT_FP4_ACTS = dict(CT_FP4_W, dynamic=True)
 
-    our_q = json.load(open(a.slim / "config.json"))["quantization_config"]
+    our_q = load_json(a.slim / "config.json")["quantization_config"]
     fp8_targets = sorted({
         relayout(t)
         for g in our_q.get("config_groups", {}).values()
@@ -303,18 +316,11 @@ def main():
                              if "indexer" not in k},
         "ignore": orca_ignore + [r"re:.*indexer.*"],
     }
-    json.dump(cfg, open(a.dst / "config.json", "w"), indent=2)
+    dump_json(cfg, a.dst / "config.json", indent=2)
     if n_unquant:
         print(f"[repack] QSA indexers kept BF16: {n_unquant} swapped, "
               "quantized_layers entries dropped")
     print(f"[repack] done: {len(new_wm)} tensors, total_size {total/2**30:.1f} GiB")
-
-
-def osz_orca(e):
-    b = ES.get(e["dtype"], 0)
-    for d in e["shape"]:
-        b *= d
-    return b
 
 
 if __name__ == "__main__":
