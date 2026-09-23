@@ -1,0 +1,1138 @@
+{
+  "server": "sglang",
+  "harness": 5,
+  "model": "qwen3.8-flash-next",
+  "single_user": [],
+  "concurrent": [],
+  "prefill_probe": [],
+  "correctness": [
+    {
+      "target_tokens": 131072,
+      "cold": {
+        "ok": true,
+        "prompt_tokens": 118062,
+        "cached_tokens": 0,
+        "completion_tokens": 48,
+        "ttft_s": 9.307,
+        "wall_s": 9.785,
+        "prefill_tps": 12685.2,
+        "decode_tps": 98.3,
+        "expected_markers": [
+          "292f9479",
+          "ef0e53eb",
+          "4d625eda",
+          "fe770fbc"
+        ],
+        "response_markers": [
+          "292f9479",
+          "ef0e53eb",
+          "4d625eda",
+          "fe770fbc"
+        ],
+        "matched": null,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.0,
+        "min_cache_hit_ratio": 0.0
+      },
+      "cold_revisit": {
+        "ok": true,
+        "prompt_tokens": 118062,
+        "cached_tokens": 118016,
+        "completion_tokens": 48,
+        "ttft_s": 0.369,
+        "wall_s": 0.837,
+        "prefill_tps": null,
+        "decode_tps": 100.4,
+        "expected_markers": [
+          "292f9479",
+          "ef0e53eb",
+          "4d625eda",
+          "fe770fbc"
+        ],
+        "response_markers": [
+          "292f9479",
+          "ef0e53eb",
+          "4d625eda",
+          "fe770fbc"
+        ],
+        "matched": null,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.9996,
+        "min_cache_hit_ratio": 0.0
+      },
+      "l3_restore": {
+        "ok": true,
+        "prompt_tokens": 118062,
+        "cached_tokens": 118016,
+        "completion_tokens": 48,
+        "ttft_s": 7.209,
+        "wall_s": 7.683,
+        "prefill_tps": null,
+        "decode_tps": 99.2,
+        "expected_markers": [
+          "292f9479",
+          "ef0e53eb",
+          "4d625eda",
+          "fe770fbc"
+        ],
+        "response_markers": [
+          "292f9479",
+          "ef0e53eb",
+          "4d625eda",
+          "fe770fbc"
+        ],
+        "matched": true,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.9996,
+        "min_cache_hit_ratio": 0.9
+      },
+      "l1_hit": {
+        "ok": true,
+        "prompt_tokens": 118062,
+        "cached_tokens": 118016,
+        "completion_tokens": 48,
+        "ttft_s": 0.368,
+        "wall_s": 0.839,
+        "prefill_tps": null,
+        "decode_tps": 99.7,
+        "expected_markers": [
+          "292f9479",
+          "ef0e53eb",
+          "4d625eda",
+          "fe770fbc"
+        ],
+        "response_markers": [
+          "292f9479",
+          "ef0e53eb",
+          "4d625eda",
+          "fe770fbc"
+        ],
+        "matched": true,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.9996,
+        "min_cache_hit_ratio": 0.9
+      },
+      "variance": null
+    },
+    {
+      "target_tokens": 196608,
+      "cold": {
+        "ok": true,
+        "prompt_tokens": 176963,
+        "cached_tokens": 0,
+        "completion_tokens": 48,
+        "ttft_s": 17.52,
+        "wall_s": 18.0,
+        "prefill_tps": 10100.4,
+        "decode_tps": 97.9,
+        "expected_markers": [
+          "bcda6c14",
+          "5e054c83",
+          "21d2e712",
+          "71a76834"
+        ],
+        "response_markers": [
+          "bcda6c14",
+          "5e054c83",
+          "21d2e712",
+          "71a76834"
+        ],
+        "matched": null,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.0,
+        "min_cache_hit_ratio": 0.0
+      },
+      "cold_revisit": {
+        "ok": true,
+        "prompt_tokens": 176963,
+        "cached_tokens": 176960,
+        "completion_tokens": 48,
+        "ttft_s": 0.412,
+        "wall_s": 0.887,
+        "prefill_tps": null,
+        "decode_tps": 99.0,
+        "expected_markers": [
+          "bcda6c14",
+          "5e054c83",
+          "21d2e712",
+          "71a76834"
+        ],
+        "response_markers": [
+          "bcda6c14",
+          "5e054c83",
+          "21d2e712",
+          "71a76834"
+        ],
+        "matched": null,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 1.0,
+        "min_cache_hit_ratio": 0.0
+      },
+      "l3_restore": {
+        "ok": true,
+        "prompt_tokens": 176963,
+        "cached_tokens": 176960,
+        "completion_tokens": 48,
+        "ttft_s": 11.582,
+        "wall_s": 12.058,
+        "prefill_tps": null,
+        "decode_tps": 98.8,
+        "expected_markers": [
+          "bcda6c14",
+          "5e054c83",
+          "21d2e712",
+          "71a76834"
+        ],
+        "response_markers": [
+          "bcda6c14",
+          "5e054c83",
+          "21d2e712",
+          "71a76834"
+        ],
+        "matched": true,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 1.0,
+        "min_cache_hit_ratio": 0.9
+      },
+      "l1_hit": {
+        "ok": true,
+        "prompt_tokens": 176963,
+        "cached_tokens": 176960,
+        "completion_tokens": 48,
+        "ttft_s": 0.409,
+        "wall_s": 0.887,
+        "prefill_tps": null,
+        "decode_tps": 98.4,
+        "expected_markers": [
+          "bcda6c14",
+          "5e054c83",
+          "21d2e712",
+          "71a76834"
+        ],
+        "response_markers": [
+          "bcda6c14",
+          "5e054c83",
+          "21d2e712",
+          "71a76834"
+        ],
+        "matched": true,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 1.0,
+        "min_cache_hit_ratio": 0.9
+      },
+      "variance": null
+    },
+    {
+      "target_tokens": 32768,
+      "cold": {
+        "ok": true,
+        "prompt_tokens": 29503,
+        "cached_tokens": 0,
+        "completion_tokens": 48,
+        "ttft_s": 13.625,
+        "wall_s": 14.247,
+        "prefill_tps": 2165.3,
+        "decode_tps": 75.6,
+        "expected_markers": [
+          "adb8c9de",
+          "cdf93a81",
+          "214864ab",
+          "3e993c9a"
+        ],
+        "response_markers": [
+          "adb8c9de",
+          "cdf93a81",
+          "214864ab",
+          "3e993c9a"
+        ],
+        "matched": null,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.0,
+        "min_cache_hit_ratio": 0.0
+      },
+      "cold_revisit": {
+        "ok": true,
+        "prompt_tokens": 29503,
+        "cached_tokens": 29440,
+        "completion_tokens": 48,
+        "ttft_s": 0.372,
+        "wall_s": 0.837,
+        "prefill_tps": null,
+        "decode_tps": 101.0,
+        "expected_markers": [
+          "adb8c9de",
+          "cdf93a81",
+          "214864ab",
+          "3e993c9a"
+        ],
+        "response_markers": [
+          "adb8c9de",
+          "cdf93a81",
+          "214864ab",
+          "3e993c9a"
+        ],
+        "matched": null,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.9979,
+        "min_cache_hit_ratio": 0.0
+      },
+      "l3_restore": {
+        "ok": false,
+        "prompt_tokens": 29503,
+        "cached_tokens": 29440,
+        "completion_tokens": 48,
+        "ttft_s": 2.496,
+        "wall_s": 2.973,
+        "prefill_tps": null,
+        "decode_tps": 98.5,
+        "expected_markers": [
+          "adb8c9de",
+          "cdf93a81",
+          "214864ab",
+          "3e993c9a"
+        ],
+        "response_markers": [
+          "cdf93a81",
+          "214864ab",
+          "3e993c9a"
+        ],
+        "matched": false,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.9979,
+        "min_cache_hit_ratio": 0.9,
+        "error": "response marker sequence mismatch: expected \"['adb8c9de', 'cdf93a81', '214864ab', '3e993c9a']\", got \"['cdf93a81', '214864ab', '3e993c9a']\""
+      },
+      "l1_hit": {
+        "ok": true,
+        "prompt_tokens": 29503,
+        "cached_tokens": 29440,
+        "completion_tokens": 48,
+        "ttft_s": 0.263,
+        "wall_s": 0.742,
+        "prefill_tps": null,
+        "decode_tps": 98.2,
+        "expected_markers": [
+          "adb8c9de",
+          "cdf93a81",
+          "214864ab",
+          "3e993c9a"
+        ],
+        "response_markers": [
+          "adb8c9de",
+          "cdf93a81",
+          "214864ab",
+          "3e993c9a"
+        ],
+        "matched": true,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.9979,
+        "min_cache_hit_ratio": 0.9
+      },
+      "variance": null
+    }
+  ],
+  "concurrent_correctness": [
+    {
+      "probe": "32768_1",
+      "cold": {
+        "ok": true,
+        "prompt_tokens": 29504,
+        "cached_tokens": 0,
+        "completion_tokens": 48,
+        "ttft_s": 12.487,
+        "wall_s": 22.513,
+        "prefill_tps": 2362.8,
+        "decode_tps": 4.7,
+        "expected_markers": [
+          "25d8ff66",
+          "cf5947bf",
+          "8199f8de",
+          "d9504508"
+        ],
+        "response_markers": [
+          "25d8ff66",
+          "cf5947bf",
+          "8199f8de",
+          "d9504508"
+        ],
+        "matched": null,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.0,
+        "min_cache_hit_ratio": 0.0
+      },
+      "cold_revisit": {
+        "ok": true,
+        "prompt_tokens": 29504,
+        "cached_tokens": 24576,
+        "completion_tokens": 48,
+        "ttft_s": 6.342,
+        "wall_s": 8.005,
+        "prefill_tps": 777.0,
+        "decode_tps": 28.3,
+        "expected_markers": [
+          "25d8ff66",
+          "cf5947bf",
+          "8199f8de",
+          "d9504508"
+        ],
+        "response_markers": [
+          "25d8ff66",
+          "cf5947bf",
+          "8199f8de",
+          "d9504508"
+        ],
+        "matched": null,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.833,
+        "min_cache_hit_ratio": 0.0
+      },
+      "l3_restore": {
+        "ok": true,
+        "prompt_tokens": 29504,
+        "cached_tokens": 24576,
+        "completion_tokens": 48,
+        "ttft_s": 5.506,
+        "wall_s": 9.394,
+        "prefill_tps": 895.0,
+        "decode_tps": 12.1,
+        "expected_markers": [
+          "25d8ff66",
+          "cf5947bf",
+          "8199f8de",
+          "d9504508"
+        ],
+        "response_markers": [
+          "25d8ff66",
+          "cf5947bf",
+          "8199f8de",
+          "d9504508"
+        ],
+        "matched": true,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.833,
+        "min_cache_hit_ratio": 0.7
+      },
+      "l1_replay": null,
+      "variance": null
+    },
+    {
+      "probe": "65536_2",
+      "cold": {
+        "ok": true,
+        "prompt_tokens": 59025,
+        "cached_tokens": 0,
+        "completion_tokens": 48,
+        "ttft_s": 16.44,
+        "wall_s": 22.508,
+        "prefill_tps": 3590.3,
+        "decode_tps": 7.7,
+        "expected_markers": [
+          "dd743b29",
+          "721c966d",
+          "7f9048b5",
+          "e0eda06e"
+        ],
+        "response_markers": [
+          "dd743b29",
+          "721c966d",
+          "7f9048b5",
+          "e0eda06e"
+        ],
+        "matched": null,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.0,
+        "min_cache_hit_ratio": 0.0
+      },
+      "cold_revisit": {
+        "ok": true,
+        "prompt_tokens": 59025,
+        "cached_tokens": 59008,
+        "completion_tokens": 48,
+        "ttft_s": 6.344,
+        "wall_s": 8.007,
+        "prefill_tps": null,
+        "decode_tps": 28.3,
+        "expected_markers": [
+          "dd743b29",
+          "721c966d",
+          "7f9048b5",
+          "e0eda06e"
+        ],
+        "response_markers": [
+          "dd743b29",
+          "721c966d",
+          "7f9048b5",
+          "e0eda06e"
+        ],
+        "matched": null,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.9997,
+        "min_cache_hit_ratio": 0.0
+      },
+      "l3_restore": {
+        "ok": true,
+        "prompt_tokens": 59025,
+        "cached_tokens": 59008,
+        "completion_tokens": 48,
+        "ttft_s": 8.744,
+        "wall_s": 9.397,
+        "prefill_tps": null,
+        "decode_tps": 71.9,
+        "expected_markers": [
+          "dd743b29",
+          "721c966d",
+          "7f9048b5",
+          "e0eda06e"
+        ],
+        "response_markers": [
+          "dd743b29",
+          "721c966d",
+          "7f9048b5",
+          "e0eda06e"
+        ],
+        "matched": true,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.9997,
+        "min_cache_hit_ratio": 0.7
+      },
+      "l1_replay": null,
+      "variance": null
+    },
+    {
+      "probe": "98304_3",
+      "cold": {
+        "ok": true,
+        "prompt_tokens": 88543,
+        "cached_tokens": 0,
+        "completion_tokens": 48,
+        "ttft_s": 21.833,
+        "wall_s": 22.494,
+        "prefill_tps": 4055.4,
+        "decode_tps": 71.2,
+        "expected_markers": [
+          "b25930e2",
+          "bee135fd",
+          "37dbbcb4",
+          "3416295e"
+        ],
+        "response_markers": [
+          "b25930e2",
+          "bee135fd",
+          "37dbbcb4",
+          "3416295e"
+        ],
+        "matched": null,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.0,
+        "min_cache_hit_ratio": 0.0
+      },
+      "cold_revisit": {
+        "ok": true,
+        "prompt_tokens": 88543,
+        "cached_tokens": 88512,
+        "completion_tokens": 48,
+        "ttft_s": 6.34,
+        "wall_s": 8.008,
+        "prefill_tps": null,
+        "decode_tps": 28.2,
+        "expected_markers": [
+          "b25930e2",
+          "bee135fd",
+          "37dbbcb4",
+          "3416295e"
+        ],
+        "response_markers": [
+          "b25930e2",
+          "bee135fd",
+          "37dbbcb4",
+          "3416295e"
+        ],
+        "matched": null,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.9996,
+        "min_cache_hit_ratio": 0.0
+      },
+      "l3_restore": {
+        "ok": true,
+        "prompt_tokens": 88543,
+        "cached_tokens": 88512,
+        "completion_tokens": 48,
+        "ttft_s": 8.749,
+        "wall_s": 9.392,
+        "prefill_tps": null,
+        "decode_tps": 73.1,
+        "expected_markers": [
+          "b25930e2",
+          "bee135fd",
+          "37dbbcb4",
+          "3416295e"
+        ],
+        "response_markers": [
+          "b25930e2",
+          "bee135fd",
+          "37dbbcb4",
+          "3416295e"
+        ],
+        "matched": true,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.9996,
+        "min_cache_hit_ratio": 0.7
+      },
+      "l1_replay": null,
+      "variance": null
+    }
+  ],
+  "session_churn": [
+    {
+      "session": "edit1",
+      "cold": {
+        "ok": true,
+        "prompt_tokens": 51642,
+        "cached_tokens": 0,
+        "completion_tokens": 80,
+        "ttft_s": 3.759,
+        "wall_s": 4.557,
+        "prefill_tps": 13737.8,
+        "decode_tps": 99.0,
+        "expected_markers": [
+          "f6bc8476",
+          "5ae9f207",
+          "6cec9722",
+          "56bac50f",
+          "718a3089",
+          "b70fd8d9",
+          "3c4f9709"
+        ],
+        "response_markers": [
+          "f6bc8476",
+          "5ae9f207",
+          "6cec9722",
+          "56bac50f",
+          "718a3089",
+          "b70fd8d9",
+          "3c4f9709"
+        ],
+        "matched": null,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.0,
+        "min_cache_hit_ratio": 0.0
+      },
+      "l3_restore": {
+        "ok": true,
+        "prompt_tokens": 51642,
+        "cached_tokens": 51584,
+        "completion_tokens": 80,
+        "ttft_s": 3.446,
+        "wall_s": 4.234,
+        "prefill_tps": null,
+        "decode_tps": 100.3,
+        "expected_markers": [
+          "f6bc8476",
+          "5ae9f207",
+          "6cec9722",
+          "56bac50f",
+          "718a3089",
+          "b70fd8d9",
+          "3c4f9709"
+        ],
+        "response_markers": [
+          "f6bc8476",
+          "5ae9f207",
+          "6cec9722",
+          "56bac50f",
+          "718a3089",
+          "b70fd8d9",
+          "3c4f9709"
+        ],
+        "matched": true,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.9989,
+        "min_cache_hit_ratio": 0.25
+      },
+      "l1_replay": null,
+      "variance": null
+    },
+    {
+      "session": "edit2",
+      "cold": {
+        "ok": true,
+        "prompt_tokens": 51660,
+        "cached_tokens": 2880,
+        "completion_tokens": 80,
+        "ttft_s": 5.508,
+        "wall_s": 6.287,
+        "prefill_tps": 8855.6,
+        "decode_tps": 101.4,
+        "expected_markers": [
+          "f6bc8476",
+          "5ae9f207",
+          "0bfa5829",
+          "6cec9722",
+          "56bac50f",
+          "718a3089",
+          "b70fd8d9",
+          "3c4f9709"
+        ],
+        "response_markers": [
+          "f6bc8476",
+          "5ae9f207",
+          "0bfa5829",
+          "6cec9722",
+          "56bac50f",
+          "718a3089",
+          "b70fd8d9",
+          "3c4f9709"
+        ],
+        "matched": null,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.0557,
+        "min_cache_hit_ratio": 0.0
+      },
+      "l3_restore": {
+        "ok": true,
+        "prompt_tokens": 51660,
+        "cached_tokens": 51648,
+        "completion_tokens": 80,
+        "ttft_s": 3.156,
+        "wall_s": 3.977,
+        "prefill_tps": null,
+        "decode_tps": 96.1,
+        "expected_markers": [
+          "f6bc8476",
+          "5ae9f207",
+          "0bfa5829",
+          "6cec9722",
+          "56bac50f",
+          "718a3089",
+          "b70fd8d9",
+          "3c4f9709"
+        ],
+        "response_markers": [
+          "f6bc8476",
+          "5ae9f207",
+          "0bfa5829",
+          "6cec9722",
+          "56bac50f",
+          "718a3089",
+          "b70fd8d9",
+          "3c4f9709"
+        ],
+        "matched": true,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.9998,
+        "min_cache_hit_ratio": 0.25
+      },
+      "l1_replay": null,
+      "variance": null
+    },
+    {
+      "session": "edit3",
+      "cold": {
+        "ok": true,
+        "prompt_tokens": 51679,
+        "cached_tokens": 4352,
+        "completion_tokens": 80,
+        "ttft_s": 5.305,
+        "wall_s": 6.088,
+        "prefill_tps": 8920.7,
+        "decode_tps": 100.9,
+        "expected_markers": [
+          "f6bc8476",
+          "5ae9f207",
+          "0bfa5829",
+          "2c331b65",
+          "6cec9722",
+          "56bac50f",
+          "718a3089",
+          "b70fd8d9",
+          "3c4f9709"
+        ],
+        "response_markers": [
+          "f6bc8476",
+          "5ae9f207",
+          "0bfa5829",
+          "2c331b65",
+          "6cec9722",
+          "56bac50f",
+          "718a3089",
+          "b70fd8d9",
+          "3c4f9709"
+        ],
+        "matched": null,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.0842,
+        "min_cache_hit_ratio": 0.0
+      },
+      "l3_restore": {
+        "ok": true,
+        "prompt_tokens": 51679,
+        "cached_tokens": 51648,
+        "completion_tokens": 80,
+        "ttft_s": 3.214,
+        "wall_s": 4.001,
+        "prefill_tps": null,
+        "decode_tps": 100.4,
+        "expected_markers": [
+          "f6bc8476",
+          "5ae9f207",
+          "0bfa5829",
+          "2c331b65",
+          "6cec9722",
+          "56bac50f",
+          "718a3089",
+          "b70fd8d9",
+          "3c4f9709"
+        ],
+        "response_markers": [
+          "f6bc8476",
+          "5ae9f207",
+          "0bfa5829",
+          "2c331b65",
+          "6cec9722",
+          "56bac50f",
+          "718a3089",
+          "b70fd8d9",
+          "3c4f9709"
+        ],
+        "matched": true,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.9994,
+        "min_cache_hit_ratio": 0.25
+      },
+      "l1_replay": null,
+      "variance": null
+    },
+    {
+      "session": "fam1",
+      "cold": {
+        "ok": true,
+        "prompt_tokens": 51624,
+        "cached_tokens": 0,
+        "completion_tokens": 80,
+        "ttft_s": 4.076,
+        "wall_s": 4.906,
+        "prefill_tps": 12663.9,
+        "decode_tps": 95.3,
+        "expected_markers": [
+          "f6bc8476",
+          "6cec9722",
+          "56bac50f",
+          "718a3089",
+          "b70fd8d9",
+          "3c4f9709"
+        ],
+        "response_markers": [
+          "f6bc8476",
+          "6cec9722",
+          "56bac50f",
+          "718a3089",
+          "b70fd8d9",
+          "3c4f9709"
+        ],
+        "matched": null,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.0,
+        "min_cache_hit_ratio": 0.0
+      },
+      "l3_restore": {
+        "ok": true,
+        "prompt_tokens": 51624,
+        "cached_tokens": 51584,
+        "completion_tokens": 80,
+        "ttft_s": 3.558,
+        "wall_s": 4.342,
+        "prefill_tps": null,
+        "decode_tps": 100.8,
+        "expected_markers": [
+          "f6bc8476",
+          "6cec9722",
+          "56bac50f",
+          "718a3089",
+          "b70fd8d9",
+          "3c4f9709"
+        ],
+        "response_markers": [
+          "f6bc8476",
+          "6cec9722",
+          "56bac50f",
+          "718a3089",
+          "b70fd8d9",
+          "3c4f9709"
+        ],
+        "matched": true,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.9992,
+        "min_cache_hit_ratio": 0.25
+      },
+      "l1_replay": null,
+      "variance": null
+    },
+    {
+      "session": "fam2",
+      "cold": {
+        "ok": true,
+        "prompt_tokens": 51623,
+        "cached_tokens": 49152,
+        "completion_tokens": 80,
+        "ttft_s": 2.407,
+        "wall_s": 3.275,
+        "prefill_tps": 1026.7,
+        "decode_tps": 91.0,
+        "expected_markers": [
+          "f6bc8476",
+          "6cec9722",
+          "56bac50f",
+          "718a3089",
+          "b70fd8d9",
+          "1ee30801"
+        ],
+        "response_markers": [
+          "f6bc8476",
+          "6cec9722",
+          "56bac50f",
+          "718a3089",
+          "b70fd8d9",
+          "1ee30801"
+        ],
+        "matched": null,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.9521,
+        "min_cache_hit_ratio": 0.0
+      },
+      "l3_restore": {
+        "ok": true,
+        "prompt_tokens": 51623,
+        "cached_tokens": 51520,
+        "completion_tokens": 80,
+        "ttft_s": 1.893,
+        "wall_s": 2.713,
+        "prefill_tps": null,
+        "decode_tps": 96.4,
+        "expected_markers": [
+          "f6bc8476",
+          "6cec9722",
+          "56bac50f",
+          "718a3089",
+          "b70fd8d9",
+          "1ee30801"
+        ],
+        "response_markers": [
+          "f6bc8476",
+          "6cec9722",
+          "56bac50f",
+          "718a3089",
+          "b70fd8d9",
+          "1ee30801"
+        ],
+        "matched": true,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.998,
+        "min_cache_hit_ratio": 0.25
+      },
+      "l1_replay": null,
+      "variance": null
+    },
+    {
+      "session": "fam3",
+      "cold": {
+        "ok": true,
+        "prompt_tokens": 51622,
+        "cached_tokens": 51520,
+        "completion_tokens": 80,
+        "ttft_s": 0.412,
+        "wall_s": 1.202,
+        "prefill_tps": null,
+        "decode_tps": 99.9,
+        "expected_markers": [
+          "f6bc8476",
+          "6cec9722",
+          "56bac50f",
+          "718a3089",
+          "b70fd8d9",
+          "78ffda41"
+        ],
+        "response_markers": [
+          "f6bc8476",
+          "6cec9722",
+          "56bac50f",
+          "718a3089",
+          "b70fd8d9",
+          "78ffda41"
+        ],
+        "matched": null,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.998,
+        "min_cache_hit_ratio": 0.0
+      },
+      "l3_restore": {
+        "ok": true,
+        "prompt_tokens": 51622,
+        "cached_tokens": 51520,
+        "completion_tokens": 80,
+        "ttft_s": 0.27,
+        "wall_s": 1.049,
+        "prefill_tps": null,
+        "decode_tps": 101.3,
+        "expected_markers": [
+          "f6bc8476",
+          "6cec9722",
+          "56bac50f",
+          "718a3089",
+          "b70fd8d9",
+          "78ffda41"
+        ],
+        "response_markers": [
+          "f6bc8476",
+          "6cec9722",
+          "56bac50f",
+          "718a3089",
+          "b70fd8d9",
+          "78ffda41"
+        ],
+        "matched": true,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.998,
+        "min_cache_hit_ratio": 0.25
+      },
+      "l1_replay": null,
+      "variance": null
+    },
+    {
+      "session": "fresh",
+      "cold": {
+        "ok": true,
+        "prompt_tokens": 51625,
+        "cached_tokens": 0,
+        "completion_tokens": 80,
+        "ttft_s": 5.364,
+        "wall_s": 6.162,
+        "prefill_tps": 9625.2,
+        "decode_tps": 98.9,
+        "expected_markers": [
+          "540052df",
+          "6cec9722",
+          "56bac50f",
+          "718a3089",
+          "b70fd8d9",
+          "9f0d252f"
+        ],
+        "response_markers": [
+          "540052df",
+          "6cec9722",
+          "56bac50f",
+          "718a3089",
+          "b70fd8d9",
+          "9f0d252f"
+        ],
+        "matched": null,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.0,
+        "min_cache_hit_ratio": 0.0
+      },
+      "l3_restore": {
+        "ok": true,
+        "prompt_tokens": 51625,
+        "cached_tokens": 51584,
+        "completion_tokens": 80,
+        "ttft_s": 3.503,
+        "wall_s": 4.298,
+        "prefill_tps": null,
+        "decode_tps": 99.3,
+        "expected_markers": [
+          "540052df",
+          "6cec9722",
+          "56bac50f",
+          "718a3089",
+          "b70fd8d9",
+          "9f0d252f"
+        ],
+        "response_markers": [
+          "540052df",
+          "6cec9722",
+          "56bac50f",
+          "718a3089",
+          "b70fd8d9",
+          "9f0d252f"
+        ],
+        "matched": true,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.9992,
+        "min_cache_hit_ratio": 0.25
+      },
+      "l1_replay": null,
+      "variance": null
+    }
+  ],
+  "digest_check": {
+    "ok": true,
+    "cold_digest_lines": 23988,
+    "restore_digest_lines": 49250,
+    "write_keys": 23732,
+    "read_keys": 23220,
+    "paired_keys": 23220,
+    "unpaired_read_keys": 0,
+    "write_conflict_count": 0,
+    "read_conflict_count": 0,
+    "mismatch_count": 0,
+    "transfer_records": 140616,
+    "transfer_exact_false": 0,
+    "transfer_flag_conflicts": 0,
+    "transfer_components": {
+      "kv_k": 34922,
+      "kv_v": 34922,
+      "kv_scale_k": 34922,
+      "kv_scale_v": 34922,
+      "mamba_temporal": 232,
+      "mamba_conv_0": 232,
+      "ple_short_conv": 232,
+      "ple_ngram": 232
+    },
+    "missing_transfer_components": [],
+    "write_conflicts": [],
+    "read_conflicts": [],
+    "mismatched_keys": [],
+    "transfer_failures": []
+  },
+  "variances": [],
+  "failures": [
+    {
+      "file": "correct_l3_32768.json",
+      "error": "response marker sequence mismatch: expected \"['adb8c9de', 'cdf93a81', '214864ab', '3e993c9a']\", got \"['cdf93a81', '214864ab', '3e993c9a']\""
+    }
+  ]
+}

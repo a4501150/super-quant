@@ -1,0 +1,399 @@
+{
+  "server": "sglang",
+  "harness": 4,
+  "model": "qwen3.8-flash-next",
+  "single_user": [
+    {
+      "prompt_idx": 0,
+      "avg_decode_tps": 93.5,
+      "avg_prefill_tps": null,
+      "avg_ttft_s": 48.622,
+      "runs": [
+        {
+          "ok": true,
+          "prompt_tokens": 39,
+          "cached_tokens": 0,
+          "completion_tokens": 5699,
+          "ttft_s": 48.622,
+          "wall_s": 109.545,
+          "prefill_tps": null,
+          "decode_tps": 93.5,
+          "expected_markers": [],
+          "response_markers": [],
+          "matched": null,
+          "matched_strict": null,
+          "marker_valid": true,
+          "cache_hit_ratio": 0.0,
+          "min_cache_hit_ratio": 0.0
+        }
+      ]
+    },
+    {
+      "prompt_idx": 1,
+      "avg_decode_tps": 94.9,
+      "avg_prefill_tps": null,
+      "avg_ttft_s": 0.249,
+      "runs": [
+        {
+          "ok": true,
+          "prompt_tokens": 36,
+          "cached_tokens": 0,
+          "completion_tokens": 1326,
+          "ttft_s": 0.249,
+          "wall_s": 14.212,
+          "prefill_tps": null,
+          "decode_tps": 94.9,
+          "expected_markers": [],
+          "response_markers": [],
+          "matched": null,
+          "matched_strict": null,
+          "marker_valid": true,
+          "cache_hit_ratio": 0.0,
+          "min_cache_hit_ratio": 0.0
+        }
+      ]
+    },
+    {
+      "prompt_idx": 2,
+      "avg_decode_tps": 95.8,
+      "avg_prefill_tps": null,
+      "avg_ttft_s": 0.216,
+      "runs": [
+        {
+          "ok": true,
+          "prompt_tokens": 34,
+          "cached_tokens": 0,
+          "completion_tokens": 3328,
+          "ttft_s": 0.216,
+          "wall_s": 34.943,
+          "prefill_tps": null,
+          "decode_tps": 95.8,
+          "expected_markers": [],
+          "response_markers": [],
+          "matched": null,
+          "matched_strict": null,
+          "marker_valid": true,
+          "cache_hit_ratio": 0.0,
+          "min_cache_hit_ratio": 0.0
+        }
+      ]
+    }
+  ],
+  "concurrent": [
+    {
+      "concurrency": 3,
+      "completed": 3,
+      "total_tokens": 18649,
+      "ttft_p50_s": 3.052,
+      "ttft_max_s": 3.052,
+      "cache_hit_requests": 0,
+      "runs": [
+        {
+          "ok": true,
+          "prompt_tokens": 39,
+          "cached_tokens": 0,
+          "completion_tokens": 6669,
+          "ttft_s": 3.052,
+          "wall_s": 92.122,
+          "prefill_tps": null,
+          "decode_tps": 74.9,
+          "expected_markers": [],
+          "response_markers": [],
+          "matched": null,
+          "matched_strict": null,
+          "marker_valid": true,
+          "cache_hit_ratio": 0.0,
+          "min_cache_hit_ratio": 0.0
+        },
+        {
+          "ok": true,
+          "prompt_tokens": 39,
+          "cached_tokens": 0,
+          "completion_tokens": 6568,
+          "ttft_s": 3.052,
+          "wall_s": 91.064,
+          "prefill_tps": null,
+          "decode_tps": 74.6,
+          "expected_markers": [],
+          "response_markers": [],
+          "matched": null,
+          "matched_strict": null,
+          "marker_valid": true,
+          "cache_hit_ratio": 0.0,
+          "min_cache_hit_ratio": 0.0
+        },
+        {
+          "ok": true,
+          "prompt_tokens": 39,
+          "cached_tokens": 0,
+          "completion_tokens": 5412,
+          "ttft_s": 3.025,
+          "wall_s": 77.547,
+          "prefill_tps": null,
+          "decode_tps": 72.6,
+          "expected_markers": [],
+          "response_markers": [],
+          "matched": null,
+          "matched_strict": null,
+          "marker_valid": true,
+          "cache_hit_ratio": 0.0,
+          "min_cache_hit_ratio": 0.0
+        }
+      ]
+    },
+    {
+      "concurrency": 6,
+      "completed": 6,
+      "total_tokens": 37615,
+      "ttft_p50_s": 0.55,
+      "ttft_max_s": 0.552,
+      "cache_hit_requests": 0,
+      "runs": [
+        {
+          "ok": true,
+          "prompt_tokens": 39,
+          "cached_tokens": 0,
+          "completion_tokens": 6134,
+          "ttft_s": 0.55,
+          "wall_s": 95.041,
+          "prefill_tps": null,
+          "decode_tps": 64.9,
+          "expected_markers": [],
+          "response_markers": [],
+          "matched": null,
+          "matched_strict": null,
+          "marker_valid": true,
+          "cache_hit_ratio": 0.0,
+          "min_cache_hit_ratio": 0.0
+        },
+        {
+          "ok": true,
+          "prompt_tokens": 39,
+          "cached_tokens": 0,
+          "completion_tokens": 6345,
+          "ttft_s": 0.549,
+          "wall_s": 98.09,
+          "prefill_tps": null,
+          "decode_tps": 65.0,
+          "expected_markers": [],
+          "response_markers": [],
+          "matched": null,
+          "matched_strict": null,
+          "marker_valid": true,
+          "cache_hit_ratio": 0.0,
+          "min_cache_hit_ratio": 0.0
+        },
+        {
+          "ok": true,
+          "prompt_tokens": 39,
+          "cached_tokens": 0,
+          "completion_tokens": 5765,
+          "ttft_s": 0.552,
+          "wall_s": 89.505,
+          "prefill_tps": null,
+          "decode_tps": 64.8,
+          "expected_markers": [],
+          "response_markers": [],
+          "matched": null,
+          "matched_strict": null,
+          "marker_valid": true,
+          "cache_hit_ratio": 0.0,
+          "min_cache_hit_ratio": 0.0
+        },
+        {
+          "ok": true,
+          "prompt_tokens": 39,
+          "cached_tokens": 0,
+          "completion_tokens": 7149,
+          "ttft_s": 0.552,
+          "wall_s": 106.412,
+          "prefill_tps": null,
+          "decode_tps": 67.5,
+          "expected_markers": [],
+          "response_markers": [],
+          "matched": null,
+          "matched_strict": null,
+          "marker_valid": true,
+          "cache_hit_ratio": 0.0,
+          "min_cache_hit_ratio": 0.0
+        },
+        {
+          "ok": true,
+          "prompt_tokens": 39,
+          "cached_tokens": 0,
+          "completion_tokens": 6349,
+          "ttft_s": 0.541,
+          "wall_s": 98.154,
+          "prefill_tps": null,
+          "decode_tps": 65.0,
+          "expected_markers": [],
+          "response_markers": [],
+          "matched": null,
+          "matched_strict": null,
+          "marker_valid": true,
+          "cache_hit_ratio": 0.0,
+          "min_cache_hit_ratio": 0.0
+        },
+        {
+          "ok": true,
+          "prompt_tokens": 39,
+          "cached_tokens": 0,
+          "completion_tokens": 5873,
+          "ttft_s": 0.55,
+          "wall_s": 91.358,
+          "prefill_tps": null,
+          "decode_tps": 64.7,
+          "expected_markers": [],
+          "response_markers": [],
+          "matched": null,
+          "matched_strict": null,
+          "marker_valid": true,
+          "cache_hit_ratio": 0.0,
+          "min_cache_hit_ratio": 0.0
+        }
+      ]
+    }
+  ],
+  "prefill_probe": [
+    {
+      "target_tokens": 131072,
+      "cold": {
+        "ok": true,
+        "prompt_tokens": 118029,
+        "cached_tokens": 0,
+        "completion_tokens": 32,
+        "ttft_s": 8.258,
+        "wall_s": 8.571,
+        "prefill_tps": 14293.0,
+        "decode_tps": 99.0,
+        "expected_markers": [
+          "491a56b6"
+        ],
+        "response_markers": [
+          "491a56b6"
+        ],
+        "matched": null,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.0,
+        "min_cache_hit_ratio": 0.0
+      },
+      "warm": {
+        "ok": true,
+        "prompt_tokens": 118029,
+        "cached_tokens": 118016,
+        "completion_tokens": 32,
+        "ttft_s": 0.27,
+        "wall_s": 0.587,
+        "prefill_tps": null,
+        "decode_tps": 97.6,
+        "expected_markers": [
+          "491a56b6"
+        ],
+        "response_markers": [
+          "491a56b6"
+        ],
+        "matched": null,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.9999,
+        "min_cache_hit_ratio": 0.0
+      }
+    },
+    {
+      "target_tokens": 32768,
+      "cold": {
+        "ok": true,
+        "prompt_tokens": 29576,
+        "cached_tokens": 0,
+        "completion_tokens": 32,
+        "ttft_s": 2.033,
+        "wall_s": 2.348,
+        "prefill_tps": 14544.6,
+        "decode_tps": 98.5,
+        "expected_markers": [
+          "0fdaa65c"
+        ],
+        "response_markers": [
+          "0fdaa65c"
+        ],
+        "matched": null,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.0,
+        "min_cache_hit_ratio": 0.0
+      },
+      "warm": {
+        "ok": true,
+        "prompt_tokens": 29576,
+        "cached_tokens": 29568,
+        "completion_tokens": 32,
+        "ttft_s": 0.182,
+        "wall_s": 0.495,
+        "prefill_tps": null,
+        "decode_tps": 99.3,
+        "expected_markers": [
+          "0fdaa65c"
+        ],
+        "response_markers": [
+          "0fdaa65c"
+        ],
+        "matched": null,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.9997,
+        "min_cache_hit_ratio": 0.0
+      }
+    },
+    {
+      "target_tokens": 8192,
+      "cold": {
+        "ok": true,
+        "prompt_tokens": 7436,
+        "cached_tokens": 0,
+        "completion_tokens": 32,
+        "ttft_s": 0.731,
+        "wall_s": 1.045,
+        "prefill_tps": 10175.3,
+        "decode_tps": 98.7,
+        "expected_markers": [
+          "949c8cfb"
+        ],
+        "response_markers": [
+          "949c8cfb"
+        ],
+        "matched": null,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.0,
+        "min_cache_hit_ratio": 0.0
+      },
+      "warm": {
+        "ok": true,
+        "prompt_tokens": 7436,
+        "cached_tokens": 7424,
+        "completion_tokens": 32,
+        "ttft_s": 0.216,
+        "wall_s": 0.53,
+        "prefill_tps": null,
+        "decode_tps": 98.7,
+        "expected_markers": [
+          "949c8cfb"
+        ],
+        "response_markers": [
+          "949c8cfb"
+        ],
+        "matched": null,
+        "matched_strict": null,
+        "marker_valid": true,
+        "cache_hit_ratio": 0.9984,
+        "min_cache_hit_ratio": 0.0
+      }
+    }
+  ],
+  "correctness": [],
+  "concurrent_correctness": [],
+  "session_churn": [],
+  "digest_check": null,
+  "failures": []
+}
