@@ -26,6 +26,15 @@ cleanup() {
                 cp "${RUNDIR}/${name}" "${base}.${name}" 2>/dev/null || true
             fi
         done
+        local metrics answer
+        for metrics in "${RUNDIR}"/*.json; do
+            answer="${metrics%.json}.ans"
+            if [[ -f "${answer}" ]] && python3 -c \
+                'import json, sys; sys.exit(bool(json.load(open(sys.argv[1])).get("ok")))' \
+                "${metrics}" 2>/dev/null; then
+                cp "${answer}" "${base}.$(basename "${answer}")" 2>/dev/null || true
+            fi
+        done
     fi
     rm -rf "${RUNDIR}"
     if [[ "${DIGEST_SERVER_ACTIVE}" == "true" ]]; then
@@ -332,7 +341,10 @@ correctness_bench() {
         log "  restarting server with page digest logging before cold writes..."
         DIGEST_SERVER_ACTIVE=true
         bash "${SCRIPT_DIR}/stop_sglang.sh" >&2
-        SGLANG_HICACHE_FILE_BACKEND_LOG_PAGE_DIGESTS=true \
+        # A fresh L3 namespace makes every restore read attributable to this
+        # run's cold writes without clearing production's existing disk cache.
+        SGLANG_HICACHE_FILE_BACKEND_STORAGE_DIR="${RUNDIR}/hicache-storage" \
+            SGLANG_HICACHE_FILE_BACKEND_LOG_PAGE_DIGESTS=true \
             bash "${SCRIPT_DIR}/serve_sglang.sh" >&2
         log ""
     fi
@@ -348,7 +360,7 @@ correctness_bench() {
         # from L2. This second access qualifies selective write-through while
         # the first request remains the reported cold measurement.
         log "  target ${target} tokens: immediate revisit for selective write-through admission"
-        BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 run_one "unused" "${RUNDIR}/correct_revisit_${target}.json" "" --prompt-file "${PF[$target]}" --max-tokens 48 --ignore-eos --no-thinking --full-text-out "${RUNDIR}/correct_revisit_${target}.ans"
+        BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 run_one "unused" "${RUNDIR}/correct_revisit_${target}.json" "" --prompt-file "${PF[$target]}" --max-tokens 48 --ignore-eos --no-thinking --full-text-out "${RUNDIR}/correct_revisit_${target}.ans" --must-match-markers
         log_metrics_line "${RUNDIR}/correct_revisit_${target}.json" "revisit"
         log ""
     done
@@ -384,7 +396,7 @@ correctness_bench() {
     pids=()
     start_ns=$(date +%s%N)
     for i in "${!CC_TAG[@]}"; do
-        ( BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 run_one "unused" "${RUNDIR}/correctcc_revisit_${CC_TAG[$i]}.json" "" --prompt-file "${CC_PF[$i]}" --max-tokens 48 --ignore-eos --no-thinking ) &
+        ( BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 run_one "unused" "${RUNDIR}/correctcc_revisit_${CC_TAG[$i]}.json" "" --prompt-file "${CC_PF[$i]}" --max-tokens 48 --ignore-eos --no-thinking --must-match-markers ) &
         pids+=($!)
     done
     for pid in "${pids[@]}"; do
@@ -420,6 +432,13 @@ correctness_bench() {
         pf="${RUNDIR}/sess_prompt_${tag}_$$.txt"
         BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 run_one "unused" "${RUNDIR}/session_cold_${tag}.json" "" --prompt-file "${pf}" --system-file "${sys_f}" --max-tokens 80 --ignore-eos --no-thinking --full-text-out "${RUNDIR}/session_cold_${tag}.ans"
         log_metrics_line "${RUNDIR}/session_cold_${tag}.json" "cold ${tag}"
+        if needs_replay "${RUNDIR}/session_cold_${tag}.json"; then
+            log "  session ${tag}: marker omission on cold generation; immediate replay"
+            BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 \
+                run_one "unused" "${RUNDIR}/session_cold_replay_${tag}.json" "" --prompt-file "${pf}" --system-file "${sys_f}" --max-tokens 80 --ignore-eos --no-thinking \
+                --must-match-markers
+            log_metrics_line "${RUNDIR}/session_cold_replay_${tag}.json" "cold replay ${tag}"
+        fi
     done
     log ""
 
@@ -449,8 +468,15 @@ correctness_bench() {
         log "  target ${target} tokens: L1 hit run after restore (must match expected markers)"
         BENCH_MIN_CACHE_HIT_RATIO="${CORRECT_MIN_HIT_RATIO}" BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 \
             run_one "unused" "${RUNDIR}/correct_l1_${target}.json" "" --prompt-file "${PF[$target]}" --max-tokens 48 --ignore-eos --no-thinking \
-            --must-match-markers
+            --full-text-out "${RUNDIR}/correct_l1_${target}.ans" --must-match-markers
         log_metrics_line "${RUNDIR}/correct_l1_${target}.json" "L1 hit"
+        if needs_replay "${RUNDIR}/correct_l1_${target}.json"; then
+            log "  target ${target} tokens: marker omission on L1 hit; immediate L1 replay"
+            BENCH_MIN_CACHE_HIT_RATIO="${CORRECT_MIN_HIT_RATIO}" BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 \
+                run_one "unused" "${RUNDIR}/correct_l1_replay_${target}.json" "" --prompt-file "${PF[$target]}" --max-tokens 48 --ignore-eos --no-thinking \
+                --must-match-markers
+            log_metrics_line "${RUNDIR}/correct_l1_replay_${target}.json" "L1 replay"
+        fi
         log ""
     done
 
@@ -491,7 +517,7 @@ correctness_bench() {
         pf="${RUNDIR}/sess_prompt_${tag}_$$.txt"
         BENCH_MIN_CACHE_HIT_RATIO="${CORRECT_SESSION_MIN_HIT}" BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 \
             run_one "unused" "${RUNDIR}/session_l3_${tag}.json" "" --prompt-file "${pf}" --system-file "${sys_f}" --max-tokens 80 --ignore-eos --no-thinking \
-            --must-match-markers
+            --full-text-out "${RUNDIR}/session_l3_${tag}.ans" --must-match-markers
         log_metrics_line "${RUNDIR}/session_l3_${tag}.json" "L3 restore ${tag}"
         if needs_replay "${RUNDIR}/session_l3_${tag}.json"; then
             log "  session ${tag}: marker omission on first L3 restore; immediate L1 replay"
@@ -649,7 +675,8 @@ for f in sorted(glob.glob(os.path.join(rundir, "correct_cold_*.json"))):
                         "cold": rd(f"correct_cold_{tgt}.json"),
                         "cold_revisit": rd(f"correct_revisit_{tgt}.json"),
                         "l3_restore": rd(f"correct_l3_{tgt}.json"),
-                        "l1_hit": rd(f"correct_l1_{tgt}.json")})
+                        "l1_hit": rd(f"correct_l1_{tgt}.json"),
+                        "l1_replay": rd(f"correct_l1_replay_{tgt}.json")})
 concurrent_correctness = []
 for f in sorted(glob.glob(os.path.join(rundir, "correctcc_cold_*.json"))):
     m = re.fullmatch(r"correctcc_cold_(\d+_\d+)\.json", os.path.basename(f))
@@ -663,24 +690,28 @@ for f in sorted(glob.glob(os.path.join(rundir, "correctcc_cold_*.json"))):
                                    "l1_replay": rd(f"correctcc_replay_{mt}.json")})
 session_churn = []
 for f in sorted(glob.glob(os.path.join(rundir, "session_cold_*.json"))):
-    m = re.fullmatch(r"session_cold_(\w+)\.json", os.path.basename(f))
+    m = re.fullmatch(r"session_cold_((?:fam|edit)\d+|fresh)\.json", os.path.basename(f))
     if not m:
         continue
     tag = m.group(1)
     session_churn.append({"session": tag,
                           "cold": rd(f"session_cold_{tag}.json"),
+                          "cold_replay": rd(f"session_cold_replay_{tag}.json"),
                           "l3_restore": rd(f"session_l3_{tag}.json"),
                           "l1_replay": rd(f"session_replay_{tag}.json")})
 
-# A first L3 marker omission is generation variance only when storage plus
-# KV transfer digests are exact and the immediate L1 replay reproduced every
-# expected marker; anything else stays a hard failure.
+# Only omission-only responses with exact digests and a complete same-prompt
+# replay can be classified as generation variance. Cold omissions also need a
+# successful restore. L1 omissions remain failures until state use is attested.
 digests = rd("hicache_digest_check.json")
 variances = []
 variance_files = set()
 
-def note_variance(section, probe, metrics_file, metrics, replay):
-    variance = diag.classify_generation_variance(metrics, replay, digests)
+def complete(metrics):
+    return bool(metrics) and metrics.get("ok") and metrics.get("matched") is True
+
+def note_variance(section, probe, phase, metrics_file, metrics, replay):
+    variance = diag.classify_generation_variance(metrics, replay, digests, phase)
     if variance:
         variance = {"section": section, "probe": probe,
                     "metrics_file": metrics_file, **variance}
@@ -690,19 +721,31 @@ def note_variance(section, probe, metrics_file, metrics, replay):
 
 for entry in correctness:
     tgt = entry["target_tokens"]
-    entry["variance"] = note_variance("correctness", f"target_{tgt}",
-                                      f"correct_l3_{tgt}.json",
-                                      entry["l3_restore"], entry["l1_hit"])
+    if complete(entry["cold_revisit"]) and complete(entry["l3_restore"]):
+        entry["cold_variance"] = note_variance(
+            "correctness", f"target_{tgt}", "cold generation",
+            f"correct_cold_{tgt}.json", entry["cold"], entry["cold_revisit"])
+    entry["variance"] = note_variance(
+        "correctness", f"target_{tgt}", "L3 restore",
+        f"correct_l3_{tgt}.json", entry["l3_restore"], entry["l1_hit"])
 for entry in concurrent_correctness:
     mt = entry["probe"]
-    entry["variance"] = note_variance("concurrent_correctness", mt,
-                                      f"correctcc_l3_{mt}.json",
-                                      entry["l3_restore"], entry["l1_replay"])
+    if complete(entry["cold_revisit"]) and complete(entry["l3_restore"]):
+        entry["cold_variance"] = note_variance(
+            "concurrent_correctness", mt, "cold generation",
+            f"correctcc_cold_{mt}.json", entry["cold"], entry["cold_revisit"])
+    entry["variance"] = note_variance(
+        "concurrent_correctness", mt, "L3 restore",
+        f"correctcc_l3_{mt}.json", entry["l3_restore"], entry["l1_replay"])
 for entry in session_churn:
     tag = entry["session"]
-    entry["variance"] = note_variance("session_churn", tag,
-                                      f"session_l3_{tag}.json",
-                                      entry["l3_restore"], entry["l1_replay"])
+    if complete(entry["l3_restore"]):
+        entry["cold_variance"] = note_variance(
+            "session_churn", tag, "cold generation",
+            f"session_cold_{tag}.json", entry["cold"], entry["cold_replay"])
+    entry["variance"] = note_variance(
+        "session_churn", tag, "L3 restore",
+        f"session_l3_{tag}.json", entry["l3_restore"], entry["l1_replay"])
 
 failures = []
 for f in sorted(glob.glob(os.path.join(rundir, "*.json"))):
@@ -722,7 +765,7 @@ for f in sorted(glob.glob(os.path.join(rundir, "*.json"))):
 
 result = {
     "server": "sglang",
-    "harness": 5,
+    "harness": 6,
     "model": model,
     "single_user": single,
     "concurrent": conc,

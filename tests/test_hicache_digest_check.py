@@ -25,8 +25,15 @@ def page_line(direction, key, sha, pool="kv", component="kv"):
     )
 
 
-def transfer_line(direction, component, host_sha, device_sha, exact,
-                  device_field="device_index", kv=True):
+def transfer_line(
+    direction,
+    component,
+    host_sha,
+    device_sha,
+    exact,
+    device_field="device_index",
+    kv=True,
+):
     prefix = "HiCache KV transfer digest" if kv else "HiCache transfer digest"
     return (
         "2026-09-18 00:00:00 WARNING pool_host: "
@@ -41,14 +48,19 @@ def omit_metrics(expected, reported, error=None):
         "ok": False,
         "expected_markers": expected,
         "response_markers": reported,
-        "error": error if error is not None else "markers missing from response: " + ", ".join(
-            m for m in expected if m not in reported),
+        "error": error
+        if error is not None
+        else "markers missing from response: "
+        + ", ".join(m for m in expected if m not in reported),
     }
 
 
-GOOD_REPLAY = {"ok": True, "matched": True,
-               "expected_markers": ["11111111", "22222222", "33333333"],
-               "response_markers": ["11111111", "22222222", "33333333"]}
+GOOD_REPLAY = {
+    "ok": True,
+    "matched": True,
+    "expected_markers": ["11111111", "22222222", "33333333"],
+    "response_markers": ["11111111", "22222222", "33333333"],
+}
 EXACT_DIGESTS = {"ok": True}
 
 
@@ -132,8 +144,10 @@ class DigestCheckTest(unittest.TestCase):
 
     def test_exact_false_kv_scale_transfer_digest_is_a_hard_failure(self):
         out = self.run_check(
-            [page_line("write", "k1", SHA_A),
-             transfer_line("write", "kv_scale_v", SHA_A, SHA_B, "False")],
+            [
+                page_line("write", "k1", SHA_A),
+                transfer_line("write", "kv_scale_v", SHA_A, SHA_B, "False"),
+            ],
             [page_line("read", "k1", SHA_A)],
         )
         self.assertFalse(out["ok"])
@@ -143,9 +157,18 @@ class DigestCheckTest(unittest.TestCase):
 
     def test_mamba_pool_transfer_digest_line_parses(self):
         out = self.run_check(
-            [page_line("write", "k1", SHA_A),
-             transfer_line("read", "recurrent_state", SHA_A, SHA_B, "False",
-                           device_field="device_slot", kv=False)],
+            [
+                page_line("write", "k1", SHA_A),
+                transfer_line(
+                    "read",
+                    "recurrent_state",
+                    SHA_A,
+                    SHA_B,
+                    "False",
+                    device_field="device_slot",
+                    kv=False,
+                ),
+            ],
             [page_line("read", "k1", SHA_A)],
         )
         self.assertFalse(out["ok"])
@@ -154,8 +177,10 @@ class DigestCheckTest(unittest.TestCase):
 
     def test_exact_flag_contradicting_digests_fails(self):
         out = self.run_check(
-            [page_line("write", "k1", SHA_A),
-             transfer_line("write", "kv_k", SHA_A, SHA_B, "True")],
+            [
+                page_line("write", "k1", SHA_A),
+                transfer_line("write", "kv_k", SHA_A, SHA_B, "True"),
+            ],
             [page_line("read", "k1", SHA_A)],
         )
         self.assertFalse(out["ok"])
@@ -164,10 +189,13 @@ class DigestCheckTest(unittest.TestCase):
 
 class VarianceClassificationTest(unittest.TestCase):
     def test_pure_omission_replays_and_classifies_as_variance(self):
-        metrics = omit_metrics(["11111111", "22222222", "33333333"],
-                               ["11111111", "22222222"])
+        metrics = omit_metrics(
+            ["11111111", "22222222", "33333333"], ["11111111", "22222222"]
+        )
         self.assertTrue(DIAG.needs_replay(metrics))
-        variance = DIAG.classify_generation_variance(metrics, GOOD_REPLAY, EXACT_DIGESTS)
+        variance = DIAG.classify_generation_variance(
+            metrics, GOOD_REPLAY, EXACT_DIGESTS
+        )
         self.assertIsNotNone(variance)
         self.assertEqual(variance["classification"], "generation_variance")
         self.assertEqual(variance["missing_markers"], ["33333333"])
@@ -186,18 +214,38 @@ class VarianceClassificationTest(unittest.TestCase):
         )
 
     def test_interior_omission_still_replays_and_classifies(self):
-        metrics = omit_metrics(["11111111", "22222222", "33333333"],
-                               ["11111111", "33333333"])
-        variance = DIAG.classify_generation_variance(metrics, GOOD_REPLAY, EXACT_DIGESTS)
+        metrics = omit_metrics(
+            ["11111111", "22222222", "33333333"], ["11111111", "33333333"]
+        )
+        variance = DIAG.classify_generation_variance(
+            metrics, GOOD_REPLAY, EXACT_DIGESTS
+        )
         self.assertIsNotNone(variance)
         self.assertEqual(variance["missing_markers"], ["22222222"])
 
+    def test_cold_omission_with_exact_digests_and_complete_replay_classifies(self):
+        metrics = omit_metrics(
+            ["11111111", "22222222", "33333333"], ["22222222", "33333333"]
+        )
+        variance = DIAG.classify_generation_variance(
+            metrics, GOOD_REPLAY, EXACT_DIGESTS, "cold generation"
+        )
+        self.assertEqual(variance["classification"], "generation_variance")
+        self.assertIn("cold generation omitted markers", variance["reason"])
+
+    def test_l1_omission_without_state_attestation_remains_hard_failure(self):
+        script = BENCH_SCRIPT_PATH.read_text()
+        self.assertIn("L1 hit; immediate L1 replay", script)
+        self.assertNotIn('"l1_variance"', script)
+
     def test_foreign_marker_is_not_a_replay_candidate(self):
-        metrics = omit_metrics(["11111111", "22222222", "33333333"],
-                               ["11111111", "deadbeef", "22222222"])
+        metrics = omit_metrics(
+            ["11111111", "22222222", "33333333"], ["11111111", "deadbeef", "22222222"]
+        )
         self.assertFalse(DIAG.needs_replay(metrics))
         self.assertIsNone(
-            DIAG.classify_generation_variance(metrics, GOOD_REPLAY, EXACT_DIGESTS))
+            DIAG.classify_generation_variance(metrics, GOOD_REPLAY, EXACT_DIGESTS)
+        )
 
     def test_reordered_markers_are_not_a_replay_candidate(self):
         metrics = {
@@ -208,28 +256,44 @@ class VarianceClassificationTest(unittest.TestCase):
         }
         self.assertFalse(DIAG.needs_replay(metrics))
         self.assertIsNone(
-            DIAG.classify_generation_variance(metrics, GOOD_REPLAY, EXACT_DIGESTS))
+            DIAG.classify_generation_variance(metrics, GOOD_REPLAY, EXACT_DIGESTS)
+        )
 
     def test_digest_conflict_or_exact_false_blocks_variance(self):
         metrics = omit_metrics(["11111111", "22222222", "33333333"], ["11111111"])
         for digests in (None, {"ok": False}, {}):
             self.assertIsNone(
-                DIAG.classify_generation_variance(metrics, GOOD_REPLAY, digests))
+                DIAG.classify_generation_variance(metrics, GOOD_REPLAY, digests)
+            )
+
+    def test_unrelated_probe_replay_remains_failure(self):
+        metrics = omit_metrics(["11111111", "22222222", "33333333"], ["11111111"])
+        replay = {**GOOD_REPLAY, "expected_markers": ["aaaaaaaa", "bbbbbbbb"]}
+        self.assertIsNone(
+            DIAG.classify_generation_variance(metrics, replay, EXACT_DIGESTS)
+        )
 
     def test_repeated_omission_on_replay_remains_failure(self):
         metrics = omit_metrics(["11111111", "22222222", "33333333"], ["11111111"])
-        failed_replay = omit_metrics(["11111111", "22222222", "33333333"],
-                                     ["11111111", "22222222"])
+        failed_replay = omit_metrics(
+            ["11111111", "22222222", "33333333"], ["11111111", "22222222"]
+        )
         self.assertIsNone(
-            DIAG.classify_generation_variance(metrics, failed_replay, EXACT_DIGESTS))
+            DIAG.classify_generation_variance(metrics, failed_replay, EXACT_DIGESTS)
+        )
         self.assertIsNone(
-            DIAG.classify_generation_variance(metrics, None, EXACT_DIGESTS))
+            DIAG.classify_generation_variance(metrics, None, EXACT_DIGESTS)
+        )
 
     def test_passing_run_never_classifies_as_variance(self):
-        metrics = {"ok": True, "expected_markers": ["11111111"],
-                   "response_markers": ["11111111"]}
+        metrics = {
+            "ok": True,
+            "expected_markers": ["11111111"],
+            "response_markers": ["11111111"],
+        }
         self.assertIsNone(
-            DIAG.classify_generation_variance(metrics, GOOD_REPLAY, EXACT_DIGESTS))
+            DIAG.classify_generation_variance(metrics, GOOD_REPLAY, EXACT_DIGESTS)
+        )
 
 
 class HarnessScriptTest(unittest.TestCase):
@@ -240,8 +304,8 @@ class HarnessScriptTest(unittest.TestCase):
         ]
         self.assertEqual(section.count("for target in ${CORRECT_TOKENS}; do"), 1)
         self.assertLess(
-            section.index('correct_cold_${target}.json'),
-            section.index('correct_revisit_${target}.json'),
+            section.index("correct_cold_${target}.json"),
+            section.index("correct_revisit_${target}.json"),
         )
 
 
@@ -263,8 +327,9 @@ class CliTest(unittest.TestCase):
     def test_needs_replay_command_exit_codes(self):
         with tempfile.TemporaryDirectory() as tmp:
             candidate = pathlib.Path(tmp) / "candidate.json"
-            candidate.write_text(json.dumps(
-                omit_metrics(["11111111", "22222222"], ["11111111"])))
+            candidate.write_text(
+                json.dumps(omit_metrics(["11111111", "22222222"], ["11111111"]))
+            )
             other = pathlib.Path(tmp) / "other.json"
             other.write_text(json.dumps({"ok": False, "error": "connection refused"}))
             missing = pathlib.Path(tmp) / "absent.json"

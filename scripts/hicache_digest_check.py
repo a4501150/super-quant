@@ -10,9 +10,9 @@ under SGLANG_HICACHE_FILE_BACKEND_LOG_PAGE_DIGESTS:
     host<->device copy per pool component (kv_k, kv_v, kv_scale_k,
     kv_scale_v, recurrent state). exact=False is always a hard failure.
 
-Also classifies a first L3 restore marker omission as generation variance
-only when storage plus transfer digests are exact and the immediate L1
-replay reproduces the complete expected marker sequence.
+Classifies a marker omission as generation variance only when storage plus
+transfer digests are exact and an immediate replay reproduces the complete
+expected marker sequence.
 """
 
 import json
@@ -62,7 +62,9 @@ def load_storage_digests(path):
                     identity = ("v1", "", m.group(2))
                     digest = m.group(4)
                 lines += 1
-                records.setdefault(direction, {}).setdefault(identity, set()).add(digest)
+                records.setdefault(direction, {}).setdefault(identity, set()).add(
+                    digest
+                )
     except FileNotFoundError:
         pass
     return records, lines
@@ -128,13 +130,17 @@ def digest_check(cold_log, restore_log):
     paired = sorted(set(writes) & set(reads), key=str)
     write_conflicts = {k: v for k, v in writes.items() if len(v) != 1}
     read_conflicts = {k: v for k, v in reads.items() if len(v) != 1}
-    mismatched = {k: {"write": writes[k], "read": reads[k]}
-                  for k in paired if writes[k] != reads[k]}
+    mismatched = {
+        k: {"write": writes[k], "read": reads[k]}
+        for k in paired
+        if writes[k] != reads[k]
+    }
 
     transfers = load_transfer_digests(cold_log) + load_transfer_digests(restore_log)
     exact_false = [r for r in transfers if not r["exact"]]
-    flag_conflicts = [r for r in transfers
-                      if (r["host_sha256"] == r["device_sha256"]) != r["exact"]]
+    flag_conflicts = [
+        r for r in transfers if (r["host_sha256"] == r["device_sha256"]) != r["exact"]
+    ]
     components = {}
     for record in transfers:
         components[record["component"]] = components.get(record["component"], 0) + 1
@@ -168,9 +174,7 @@ def digest_check(cold_log, restore_log):
         "write_conflicts": _conflict_rows(write_conflicts, "writes"),
         "read_conflicts": _conflict_rows(read_conflicts, "reads"),
         "mismatched_keys": _rows(mismatched),
-        "transfer_failures": [
-            dict(r) for r in (exact_false + flag_conflicts)[:50]
-        ],
+        "transfer_failures": [dict(r) for r in (exact_false + flag_conflicts)[:50]],
     }
     if not ok:
         out["error"] = (
@@ -197,29 +201,32 @@ def omission_only(metrics):
         return False
     pos = -1
     for marker in reported:
-        rest = expected[pos + 1:]
+        rest = expected[pos + 1 :]
         if marker not in rest:
             return False
         pos = pos + 1 + rest.index(marker)
     return True
 
 
-def replay_is_complete(replay):
-    """True when the immediate L1 replay reproduced every expected marker."""
-    return bool(replay) and bool(replay.get("ok")) and replay.get("matched") is True
+def replay_is_complete(metrics, replay):
+    """True when a replay of the same probe reproduced all expected markers."""
+    return (
+        bool(replay)
+        and bool(replay.get("ok"))
+        and replay.get("matched") is True
+        and replay.get("expected_markers") == metrics.get("expected_markers")
+    )
 
 
 def _is_marker_error(metrics):
     return metrics.get("error", "").startswith(MARKER_ERROR_PREFIXES)
 
 
-def classify_generation_variance(metrics, replay, digests):
-    """Classify a failed L3 restore as generation variance, or None.
+def classify_generation_variance(metrics, replay, digests, phase="L3 restore"):
+    """Classify an omission with an exact-digest, complete replay as variance.
 
-    Variance requires: omission-only marker defect, exact storage plus KV
-    transfer digests (digests.ok), and an immediate L1 replay with the
-    complete expected marker sequence. Repeated omission, foreign markers,
-    digest conflicts/mismatches, or exact=False remain failures.
+    Repeated omission, foreign markers, digest conflicts/mismatches, and
+    exact=False remain failures.
     """
     if metrics is None or metrics.get("ok"):
         return None
@@ -229,15 +236,14 @@ def classify_generation_variance(metrics, replay, digests):
         return None
     if not digests or not digests.get("ok"):
         return None
-    if not replay_is_complete(replay):
+    if not replay_is_complete(metrics, replay):
         return None
     reported = set(metrics.get("response_markers") or [])
     return {
         "classification": "generation_variance",
         "reason": (
-            "first L3 restore omitted markers while storage and KV transfer "
-            "digests were exact, and the immediate L1 replay reproduced every "
-            "expected marker"
+            f"{phase} omitted markers while storage and KV transfer digests "
+            "were exact, and the immediate replay reproduced every expected marker"
         ),
         "missing_markers": [
             m for m in metrics.get("expected_markers") or [] if m not in reported
@@ -246,26 +252,28 @@ def classify_generation_variance(metrics, replay, digests):
 
 
 def needs_replay(metrics):
-    """True when a failed L3 restore should get an immediate L1 replay."""
+    """True when a failed marker check needs an immediate replay."""
     return (
-        not metrics.get("ok")
-        and _is_marker_error(metrics)
-        and omission_only(metrics)
+        not metrics.get("ok") and _is_marker_error(metrics) and omission_only(metrics)
     )
 
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     if not argv:
-        raise SystemExit("usage: hicache_digest_check.py check <cold> <restore> <out-json> | needs-replay <metrics-json>")
+        raise SystemExit(
+            "usage: hicache_digest_check.py check <cold> <restore> <out-json> | needs-replay <metrics-json>"
+        )
     command = argv[0]
     if command == "check":
         cold_log, restore_log, out_path = argv[1:4]
         out = digest_check(cold_log, restore_log)
         with open(out_path, "w") as f:
             json.dump(out, f, indent=2)
-        print(json.dumps({k: v for k, v in out.items() if not isinstance(v, list)}),
-              file=sys.stderr)
+        print(
+            json.dumps({k: v for k, v in out.items() if not isinstance(v, list)}),
+            file=sys.stderr,
+        )
         return 0 if out["ok"] else 1
     if command == "needs-replay":
         try:
