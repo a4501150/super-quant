@@ -474,7 +474,7 @@ correctness_bench() {
             log "  target ${target} tokens: marker omission on L1 hit; immediate L1 replay"
             BENCH_MIN_CACHE_HIT_RATIO="${CORRECT_MIN_HIT_RATIO}" BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 \
                 run_one "unused" "${RUNDIR}/correct_l1_replay_${target}.json" "" --prompt-file "${PF[$target]}" --max-tokens 48 --ignore-eos --no-thinking \
-                --must-match-markers
+                --full-text-out "${RUNDIR}/correct_l1_replay_${target}.ans" --must-match-markers
             log_metrics_line "${RUNDIR}/correct_l1_replay_${target}.json" "L1 replay"
         fi
         log ""
@@ -505,7 +505,8 @@ correctness_bench() {
         if needs_replay "${RUNDIR}/correctcc_l3_${tag}.json"; then
             log "  concurrent ${tag}: marker omission on first L3 restore; immediate L1 replay"
             BENCH_MIN_CACHE_HIT_RATIO="${CORRECT_CONC_MIN_HIT_RATIO}" BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 \
-                run_one "unused" "${RUNDIR}/correctcc_replay_${tag}.json" "" --prompt-file "${CC_PF[$i]}" --max-tokens 48 --ignore-eos --no-thinking --must-match-markers
+                run_one "unused" "${RUNDIR}/correctcc_replay_${tag}.json" "" --prompt-file "${CC_PF[$i]}" --max-tokens 48 --ignore-eos --no-thinking \
+                --full-text-out "${RUNDIR}/correctcc_replay_${tag}.ans" --must-match-markers
             log_metrics_line "${RUNDIR}/correctcc_replay_${tag}.json" "L1 replay ${tag}"
         fi
     done
@@ -523,7 +524,7 @@ correctness_bench() {
             log "  session ${tag}: marker omission on first L3 restore; immediate L1 replay"
             BENCH_MIN_CACHE_HIT_RATIO="${CORRECT_SESSION_MIN_HIT}" BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 \
                 run_one "unused" "${RUNDIR}/session_replay_${tag}.json" "" --prompt-file "${pf}" --system-file "${sys_f}" --max-tokens 80 --ignore-eos --no-thinking \
-                --must-match-markers
+                --full-text-out "${RUNDIR}/session_replay_${tag}.ans" --must-match-markers
             log_metrics_line "${RUNDIR}/session_replay_${tag}.json" "L1 replay ${tag}"
         fi
     done

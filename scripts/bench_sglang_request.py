@@ -15,7 +15,9 @@ from urllib.request import Request, urlopen
 EXPECTED_MARKER_RE = re.compile(
     r"Unique marker ([0-9a-f]{8})(?![0-9a-z])", re.IGNORECASE
 )
-RESPONSE_MARKER_RE = re.compile(r"(?<![0-9a-z])([0-9a-f]{8})(?![0-9a-z])")
+RESPONSE_MARKER_RE = re.compile(r"([0-9a-f]{8})(?![0-9a-z])")
+RESPONSE_WORD_SUFFIX_RE = re.compile(r"[0-9a-z]+$")
+HEX_DIGITS = frozenset("0123456789abcdef")
 
 
 def expected_marker_sequence(system, prompt):
@@ -24,7 +26,25 @@ def expected_marker_sequence(system, prompt):
 
 
 def response_marker_sequence(response_text, expected_count):
-    return RESPONSE_MARKER_RE.findall(response_text.lower())[:expected_count]
+    if expected_count == 0:
+        return []
+    text = response_text.lower()
+    markers = []
+    for match in RESPONSE_MARKER_RE.finditer(text):
+        prefix = RESPONSE_WORD_SUFFIX_RE.search(text[: match.start()])
+        if prefix:
+            word = prefix.group()
+            # A marker may follow prose directly, but not a hex ID fragment.
+            if (
+                len(word) < 2
+                or not word.isalpha()
+                or all(c in HEX_DIGITS for c in word)
+            ):
+                continue
+        markers.append(match.group(1))
+        if len(markers) == expected_count:
+            break
+    return markers
 
 
 def main():

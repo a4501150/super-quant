@@ -51,10 +51,27 @@ class MarkerSequenceTest(unittest.TestCase):
             expected,
         )
 
+    def test_markers_joined_to_prose_are_recognized(self):
+        response = "The user is asking me51d5fa07, 8125b7c7. Theffefff7a"
+
+        self.assertEqual(
+            BENCH.response_marker_sequence(response, 3),
+            ["51d5fa07", "8125b7c7", "ffefff7a"],
+        )
+
+    def test_foreign_marker_joined_to_prose_remains_a_failure(self):
+        expected = ["11111111", "22222222"]
+        response = "11111111 Thedeadbeef 22222222"
+
+        self.assertNotEqual(
+            BENCH.response_marker_sequence(response, len(expected)), expected
+        )
+
     def test_hex_substrings_are_not_markers(self):
         response = "x11111111 222222222 33333333z 44444444"
 
         self.assertEqual(BENCH.response_marker_sequence(response, 4), ["44444444"])
+        self.assertEqual(BENCH.response_marker_sequence(response, 0), [])
 
     def test_expected_markers_require_standalone_eight_hex(self):
         prompt = (
