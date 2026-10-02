@@ -3,6 +3,7 @@ import importlib.util
 import io
 import json
 import pathlib
+import subprocess
 import tempfile
 import unittest
 
@@ -297,6 +298,100 @@ class VarianceClassificationTest(unittest.TestCase):
 
 
 class HarnessScriptTest(unittest.TestCase):
+    def test_failed_client_json_is_preserved(self):
+        script = BENCH_SCRIPT_PATH.read_text()
+        run_one = script[
+            script.index("run_one() {") : script.index("log_metrics_line() {")
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            output = pathlib.Path(tmp) / "metrics.json"
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    run_one
+                    + """
+SCRIPT_DIR=unused
+SERVED_NAME=test
+PORT=8000
+python3() { printf '%s\\n' '{"ok":false,"error":"connection refused"}'; return 1; }
+run_one prompt "$1"
+""",
+                    "test",
+                    str(output),
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            self.assertEqual(result.stdout, "")
+            self.assertEqual(
+                json.loads(output.read_text()),
+                {"ok": False, "error": "connection refused"},
+            )
+
+    def test_failure_log_and_metrics_are_saved_before_server_restart(self):
+        script = BENCH_SCRIPT_PATH.read_text()
+        cleanup = script[
+            script.index("cleanup() {") : script.index("trap cleanup EXIT")
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            project = pathlib.Path(tmp)
+            rundir = project / "run"
+            rundir.mkdir()
+            (project / ".sglang.log").write_text("scheduler crashed\n")
+            (rundir / "failed.json").write_text('{"ok":false,"error":"no usage"}')
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    cleanup
+                    + """
+PROJECT_DIR="$1"
+RUNDIR="$1/run"
+RESULT_FILE="$1/result.json"
+SCRIPT_DIR=unused
+DIGEST_SERVER_ACTIVE=true
+log() { :; }
+bash() { printf '%s\\n' 'normal startup' > "$PROJECT_DIR/.sglang.log"; }
+false
+cleanup
+""",
+                    "test",
+                    str(project),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertEqual(
+                (project / "result.correct_failure_server.log").read_text(),
+                "scheduler crashed\n",
+            )
+            self.assertEqual(
+                json.loads((project / "result.failed.json").read_text()),
+                {"ok": False, "error": "no usage"},
+            )
+            self.assertEqual((project / ".sglang.log").read_text(), "normal startup\n")
+            self.assertFalse(rundir.exists())
+
+    def test_session_revisit_is_unconditional_and_in_same_loop_as_cold_probe(self):
+        script = BENCH_SCRIPT_PATH.read_text()
+        section = script[
+            script.index('log "  session-churn cold batch:') : script.index(
+                'log "  waiting ${CORRECT_WRITE_SETTLE_SECONDS}s'
+            )
+        ]
+        self.assertEqual(section.count('for tag in "${SE_TAG[@]}"; do'), 1)
+        self.assertLess(
+            section.index("session_cold_${tag}.json"),
+            section.index("session_revisit_${tag}.json"),
+        )
+        self.assertNotIn("if needs_replay", section)
+        self.assertIn('"cold_revisit": rd(f"session_revisit_{tag}.json")', script)
+        self.assertIn('if complete(entry["cold_revisit"])', script)
+
     def test_standalone_revisit_is_in_same_loop_as_cold_probe(self):
         script = BENCH_SCRIPT_PATH.read_text()
         section = script[

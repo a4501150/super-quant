@@ -21,13 +21,18 @@ cleanup() {
     if [[ "${status}" -ne 0 ]]; then
         # Keep the Phase 4 diagnostic logs next to the result JSON for post-mortem.
         local base="${RESULT_FILE%.json}" name
-        for name in correct_cold_server.log correct_restore_server.log; do
+        if [[ "${DIGEST_SERVER_ACTIVE}" == "true" && -f "${PROJECT_DIR}/.sglang.log" ]]; then
+            cp "${PROJECT_DIR}/.sglang.log" "${RUNDIR}/correct_failure_server.log"
+        fi
+        for name in correct_cold_server.log correct_restore_server.log correct_failure_server.log; do
             if [[ -f "${RUNDIR}/${name}" ]]; then
                 cp "${RUNDIR}/${name}" "${base}.${name}" 2>/dev/null || true
             fi
         done
         local metrics answer
         for metrics in "${RUNDIR}"/*.json; do
+            [[ -f "${metrics}" ]] || continue
+            cp "${metrics}" "${base}.$(basename "${metrics}")"
             answer="${metrics%.json}.ans"
             if [[ -f "${answer}" ]] && python3 -c \
                 'import json, sys; sys.exit(bool(json.load(open(sys.argv[1])).get("ok")))' \
@@ -68,9 +73,14 @@ run_one() {
                 --model "${SERVED_NAME}" --prompt "${prompt}" --out-json "${out_json}")
     [[ -n "${out_text}" ]] && args+=(--text-out "${out_text}")
     args+=("${@:4}")
-    if ! python3 "${SCRIPT_DIR}/bench_sglang_request.py" "${args[@]}" > /dev/null; then
+    local client_json
+    if ! client_json=$(python3 "${SCRIPT_DIR}/bench_sglang_request.py" "${args[@]}"); then
         if [[ ! -s "${out_json}" ]]; then
-            printf '{"ok":false,"error":"benchmark client failed without metrics"}\n' > "${out_json}"
+            if [[ -n "${client_json}" ]]; then
+                printf '%s\n' "${client_json}" > "${out_json}"
+            else
+                printf '{"ok":false,"error":"benchmark client failed without metrics"}\n' > "${out_json}"
+            fi
         fi
     fi
 }
@@ -432,13 +442,11 @@ correctness_bench() {
         pf="${RUNDIR}/sess_prompt_${tag}_$$.txt"
         BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 run_one "unused" "${RUNDIR}/session_cold_${tag}.json" "" --prompt-file "${pf}" --system-file "${sys_f}" --max-tokens 80 --ignore-eos --no-thinking --full-text-out "${RUNDIR}/session_cold_${tag}.ans"
         log_metrics_line "${RUNDIR}/session_cold_${tag}.json" "cold ${tag}"
-        if needs_replay "${RUNDIR}/session_cold_${tag}.json"; then
-            log "  session ${tag}: marker omission on cold generation; immediate replay"
-            BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 \
-                run_one "unused" "${RUNDIR}/session_cold_replay_${tag}.json" "" --prompt-file "${pf}" --system-file "${sys_f}" --max-tokens 80 --ignore-eos --no-thinking \
-                --must-match-markers
-            log_metrics_line "${RUNDIR}/session_cold_replay_${tag}.json" "cold replay ${tag}"
-        fi
+        log "  session ${tag}: immediate revisit for selective write-through admission"
+        BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 \
+            run_one "unused" "${RUNDIR}/session_revisit_${tag}.json" "" --prompt-file "${pf}" --system-file "${sys_f}" --max-tokens 80 --ignore-eos --no-thinking \
+            --must-match-markers
+        log_metrics_line "${RUNDIR}/session_revisit_${tag}.json" "revisit ${tag}"
     done
     log ""
 
@@ -697,7 +705,7 @@ for f in sorted(glob.glob(os.path.join(rundir, "session_cold_*.json"))):
     tag = m.group(1)
     session_churn.append({"session": tag,
                           "cold": rd(f"session_cold_{tag}.json"),
-                          "cold_replay": rd(f"session_cold_replay_{tag}.json"),
+                          "cold_revisit": rd(f"session_revisit_{tag}.json"),
                           "l3_restore": rd(f"session_l3_{tag}.json"),
                           "l1_replay": rd(f"session_replay_{tag}.json")})
 
@@ -740,10 +748,10 @@ for entry in concurrent_correctness:
         f"correctcc_l3_{mt}.json", entry["l3_restore"], entry["l1_replay"])
 for entry in session_churn:
     tag = entry["session"]
-    if complete(entry["l3_restore"]):
+    if complete(entry["cold_revisit"]) and complete(entry["l3_restore"]):
         entry["cold_variance"] = note_variance(
             "session_churn", tag, "cold generation",
-            f"session_cold_{tag}.json", entry["cold"], entry["cold_replay"])
+            f"session_cold_{tag}.json", entry["cold"], entry["cold_revisit"])
     entry["variance"] = note_variance(
         "session_churn", tag, "L3 restore",
         f"session_l3_{tag}.json", entry["l3_restore"], entry["l1_replay"])
