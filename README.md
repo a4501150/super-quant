@@ -74,7 +74,7 @@ The current `Qwen3.8-Flash-Next` configuration uses:
 - Breakable CUDA graphs.
 - A 262,144-token context limit and six running requests.
 - Direct, on-demand PLE reads from the selected safetensors checkpoint, without a second 95.4 GiB table copy.
-- A 12 GB HiCache host tier and a file-backed SSD tier capped at 50 GB.
+- An 18 GB HiCache host budget and a file-backed SSD tier capped at 64 GB. Sparse-indexer host buffers are allocated separately from this host budget.
 
 The SSD tier starts eviction at 90% of its cap and keeps 50 GB of disk space free. Its default directory is `~/models/hicache`.
 

@@ -18,7 +18,7 @@ Config-driven quantization and serving pipeline for hybrid language models. The 
 - SGLang uses `.sglang.pid`/`.sglang.log`; vLLM uses `.vllm.pid`/`.vllm.log`. They are independent processes but normally compete for the same configured port and GPU.
 - `Qwen3.8-Flash-Next` reads its 95.4 GiB BF16 PLE table directly from the selected safetensors checkpoint. Checkpoint prefetch must skip the direct PLE source files instead of warming the full table, and the direct source must not be combined with SGLang's built-in pinned/file PLE offload.
 - FlashInfer GDN prefill on SM120 requires CUDA 13 or newer. Production uses FlashInfer for GDN prefill, decode, and verify.
-- The production HiCache log reports the 15 GB L2 host tier. The L3 file tier is capped separately at 50 GB, starts eviction near 45 GB, and uses selective write-through to avoid persisting one-use branches.
+- HiCache host and disk budgets are independent. The host budget covers KV and recurrent state, but sparse-indexer host buffers are allocated separately. Do not treat the host-size setting as a limit on total process memory. Selective write-through avoids persisting one-use branches.
 - To empty all HiCache tiers without restarting an idle SGLang server, run these commands in order (the flush waits up to 120 seconds for requests to become idle):
 
   ```bash
