@@ -713,7 +713,10 @@ for f in sorted(glob.glob(os.path.join(rundir, "session_cold_*.json"))):
 
 # Only omission-only responses with exact digests and a complete same-prompt
 # replay can be classified as generation variance. Cold omissions also need a
-# successful restore. L1 omissions remain failures until state use is attested.
+# successful restore, and revisit omissions a successful later L3 restore (the
+# same prompt re-read through restored state): if the later run reproduces
+# every marker, the omission was a batch-sensitive generation flip, not state
+# corruption. L1 omissions remain failures until state use is attested.
 digests = rd("hicache_digest_check.json")
 variances = []
 variance_files = set()
@@ -732,6 +735,9 @@ def note_variance(section, probe, phase, metrics_file, metrics, replay):
 
 for entry in correctness:
     tgt = entry["target_tokens"]
+    entry["revisit_variance"] = note_variance(
+        "correctness", f"target_{tgt}", "revisit generation",
+        f"correct_revisit_{tgt}.json", entry["cold_revisit"], entry["l3_restore"])
     if complete(entry["cold_revisit"]) and complete(entry["l3_restore"]):
         entry["cold_variance"] = note_variance(
             "correctness", f"target_{tgt}", "cold generation",
@@ -741,6 +747,9 @@ for entry in correctness:
         f"correct_l3_{tgt}.json", entry["l3_restore"], entry["l1_hit"])
 for entry in concurrent_correctness:
     mt = entry["probe"]
+    entry["revisit_variance"] = note_variance(
+        "concurrent_correctness", mt, "revisit generation",
+        f"correctcc_revisit_{mt}.json", entry["cold_revisit"], entry["l3_restore"])
     if complete(entry["cold_revisit"]) and complete(entry["l3_restore"]):
         entry["cold_variance"] = note_variance(
             "concurrent_correctness", mt, "cold generation",
@@ -750,6 +759,9 @@ for entry in concurrent_correctness:
         f"correctcc_l3_{mt}.json", entry["l3_restore"], entry["l1_replay"])
 for entry in session_churn:
     tag = entry["session"]
+    entry["revisit_variance"] = note_variance(
+        "session_churn", tag, "revisit generation",
+        f"session_revisit_{tag}.json", entry["cold_revisit"], entry["l3_restore"])
     if complete(entry["cold_revisit"]) and complete(entry["l3_restore"]):
         entry["cold_variance"] = note_variance(
             "session_churn", tag, "cold generation",

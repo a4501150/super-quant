@@ -30,7 +30,7 @@ Config-driven quantization and serving pipeline for hybrid language models. The 
 
   Use this sequence in benchmarks only when a restart serves solely to clear cache state rather than change launch settings or reset process state.
 - HiCache L3 restores through L2 before data reaches the GPU. Missing L3 suffix pages cause recomputation, not foreign state restoration.
-- Byte-identical restored pages can still produce different tokens. GDN and CUTLASS NVFP4 MoE execution is batch-sensitive near tied logits. Treat digest conflicts, foreign markers, or reordered markers as cache corruption; a marker omission without a digest mismatch is a generation-path difference.
+- Byte-identical restored pages can still produce different tokens. GDN and CUTLASS NVFP4 MoE execution is batch-sensitive near tied logits. Treat digest conflicts, foreign markers, or reordered markers as cache corruption; a marker omission without a digest mismatch is a generation-path difference. The bench classifies such omissions (cold, revisit, and restore phases) as variances when a later run of the same probe reproduces every expected marker — only digest or marker-structure evidence is a hard failure.
 - RecoverSSM work must finish before Mamba state copy, donation, quantization, free, or slot reuse. Preserve this ordering when changing cache code.
 - The Qwen3.6/3.8 27B AEON models are hybrid architectures: 48 of 64 layers use GatedDeltaNet recurrence and 16 use full attention. Quantization error in recurrence tensors compounds across token positions.
 - Per-tensor override patterns are regular expressions. Anchor and escape tensor names, for example `^blk\.3\.attn_output\.weight$=f16`; an unescaped dot or unanchored name can match unrelated tensors.
