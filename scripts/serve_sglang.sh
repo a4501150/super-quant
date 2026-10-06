@@ -101,6 +101,9 @@ ARGS=(
 [[ -n "${SGLANG_MEM_FRACTION_STATIC:-}" ]] && ARGS+=(--mem-fraction-static "$SGLANG_MEM_FRACTION_STATIC")
 [[ -n "${SGLANG_MAX_TOTAL_TOKENS:-}" ]] && ARGS+=(--max-total-tokens "$SGLANG_MAX_TOTAL_TOKENS")
 [[ -n "${SGLANG_CUDA_GRAPH_BACKEND_DECODE:-}" ]] && ARGS+=(--cuda-graph-backend-decode "$SGLANG_CUDA_GRAPH_BACKEND_DECODE")
+# Breakable prefill graphs reserve ~6.75 GB of static buffers for no measured
+# prefill gain; that headroom is needed for warmup and eager fallbacks instead.
+[[ "${SGLANG_DISABLE_PREFILL_CUDA_GRAPH:-}" == "true" ]] && ARGS+=(--disable-prefill-cuda-graph)
 [[ -n "${SGLANG_CHUNKED_PREFILL_SIZE:-}" ]] && ARGS+=(--chunked-prefill-size "$SGLANG_CHUNKED_PREFILL_SIZE" --max-prefill-tokens "${SGLANG_MAX_PREFILL_TOKENS:-$SGLANG_CHUNKED_PREFILL_SIZE}")
 [[ "${SGLANG_ENABLE_MIXED_CHUNK:-}" == "true" ]] && ARGS+=(--enable-mixed-chunk)
 [[ -n "${SGLANG_NUM_CONTINUOUS_DECODE_STEPS:-}" ]] && ARGS+=(--num-continuous-decode-steps "$SGLANG_NUM_CONTINUOUS_DECODE_STEPS")
