@@ -364,13 +364,13 @@ correctness_bench() {
         PF[$target]="${RUNDIR}/correct_${target}_$$.txt"
         gen_correct_probe "${PF[$target]}" "${target}"
         log "  target ${target} tokens: cold greedy prefill (writes L1->L2->L3)"
-        BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 run_one "unused" "${RUNDIR}/correct_cold_${target}.json" "" --prompt-file "${PF[$target]}" --max-tokens 48 --ignore-eos --no-thinking --full-text-out "${RUNDIR}/correct_cold_${target}.ans"
+        BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 run_one "unused" "${RUNDIR}/correct_cold_${target}.json" "" --prompt-file "${PF[$target]}" --max-tokens 48 --ignore-eos --no-thinking --cache-salt "correct_${target}" --full-text-out "${RUNDIR}/correct_cold_${target}.ans"
         log_metrics_line "${RUNDIR}/correct_cold_${target}.json" "cold"
         # Revisit immediately, before later large probes can evict this prefix
         # from L2. This second access qualifies selective write-through while
         # the first request remains the reported cold measurement.
         log "  target ${target} tokens: immediate revisit for selective write-through admission"
-        BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 run_one "unused" "${RUNDIR}/correct_revisit_${target}.json" "" --prompt-file "${PF[$target]}" --max-tokens 48 --ignore-eos --no-thinking --full-text-out "${RUNDIR}/correct_revisit_${target}.ans" --must-match-markers
+        BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 run_one "unused" "${RUNDIR}/correct_revisit_${target}.json" "" --prompt-file "${PF[$target]}" --max-tokens 48 --ignore-eos --no-thinking --cache-salt "correct_${target}" --full-text-out "${RUNDIR}/correct_revisit_${target}.ans" --must-match-markers
         log_metrics_line "${RUNDIR}/correct_revisit_${target}.json" "revisit"
         log ""
     done
@@ -388,7 +388,7 @@ correctness_bench() {
     local start_ns end_ns
     start_ns=$(date +%s%N)
     for i in "${!CC_TAG[@]}"; do
-        ( BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 run_one "unused" "${RUNDIR}/correctcc_cold_${CC_TAG[$i]}.json" "" --prompt-file "${CC_PF[$i]}" --max-tokens 48 --ignore-eos --no-thinking --full-text-out "${RUNDIR}/correctcc_cold_${CC_TAG[$i]}.ans" ) &
+        ( BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 run_one "unused" "${RUNDIR}/correctcc_cold_${CC_TAG[$i]}.json" "" --prompt-file "${CC_PF[$i]}" --max-tokens 48 --ignore-eos --no-thinking --cache-salt "cc_${CC_TAG[$i]}" --full-text-out "${RUNDIR}/correctcc_cold_${CC_TAG[$i]}.ans" ) &
         pids+=($!)
     done
     local pid
@@ -406,7 +406,7 @@ correctness_bench() {
     pids=()
     start_ns=$(date +%s%N)
     for i in "${!CC_TAG[@]}"; do
-        ( BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 run_one "unused" "${RUNDIR}/correctcc_revisit_${CC_TAG[$i]}.json" "" --prompt-file "${CC_PF[$i]}" --max-tokens 48 --ignore-eos --no-thinking --must-match-markers ) &
+        ( BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 run_one "unused" "${RUNDIR}/correctcc_revisit_${CC_TAG[$i]}.json" "" --prompt-file "${CC_PF[$i]}" --max-tokens 48 --ignore-eos --no-thinking --cache-salt "cc_${CC_TAG[$i]}" --must-match-markers ) &
         pids+=($!)
     done
     for pid in "${pids[@]}"; do
@@ -421,7 +421,9 @@ correctness_bench() {
 
     # Session churn: long multi-section system prompt edited between sessions
     # (radix tree re-roots at every edit) plus a branch family that shares one
-    # deep prefix and diverges at the tail (sibling sessions branch mid-tree).
+    # deep prefix and diverges at the tail. Each session gets its own
+    # cache_salt namespace so unrelated sessions cannot share prefix entries;
+    # cold/revisit/restore/replay of one tag share the tag's salt.
     local -a SE_TAG=()
     local -A SE_SYS=()
     for i in $(seq 1 ${CORRECT_SESSION_FAMILIES}); do
@@ -440,11 +442,11 @@ correctness_bench() {
     for tag in "${SE_TAG[@]}"; do
         sys_f="${SE_SYS[$tag]}"
         pf="${RUNDIR}/sess_prompt_${tag}_$$.txt"
-        BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 run_one "unused" "${RUNDIR}/session_cold_${tag}.json" "" --prompt-file "${pf}" --system-file "${sys_f}" --max-tokens 80 --ignore-eos --no-thinking --full-text-out "${RUNDIR}/session_cold_${tag}.ans"
+        BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 run_one "unused" "${RUNDIR}/session_cold_${tag}.json" "" --prompt-file "${pf}" --system-file "${sys_f}" --max-tokens 80 --ignore-eos --no-thinking --cache-salt "sess_${tag}" --full-text-out "${RUNDIR}/session_cold_${tag}.ans"
         log_metrics_line "${RUNDIR}/session_cold_${tag}.json" "cold ${tag}"
         log "  session ${tag}: immediate revisit for selective write-through admission"
         BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 \
-            run_one "unused" "${RUNDIR}/session_revisit_${tag}.json" "" --prompt-file "${pf}" --system-file "${sys_f}" --max-tokens 80 --ignore-eos --no-thinking \
+            run_one "unused" "${RUNDIR}/session_revisit_${tag}.json" "" --prompt-file "${pf}" --system-file "${sys_f}" --max-tokens 80 --ignore-eos --no-thinking --cache-salt "sess_${tag}" \
             --must-match-markers
         log_metrics_line "${RUNDIR}/session_revisit_${tag}.json" "revisit ${tag}"
     done
@@ -470,18 +472,18 @@ correctness_bench() {
     for target in ${CORRECT_TOKENS}; do
         log "  target ${target} tokens: L3 restore run (must match expected markers)"
         BENCH_MIN_CACHE_HIT_RATIO="${CORRECT_MIN_HIT_RATIO}" BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 \
-            run_one "unused" "${RUNDIR}/correct_l3_${target}.json" "" --prompt-file "${PF[$target]}" --max-tokens 48 --ignore-eos --no-thinking \
+            run_one "unused" "${RUNDIR}/correct_l3_${target}.json" "" --prompt-file "${PF[$target]}" --max-tokens 48 --ignore-eos --no-thinking --cache-salt "correct_${target}" \
             --full-text-out "${RUNDIR}/correct_l3_${target}.ans" --must-match-markers
         log_metrics_line "${RUNDIR}/correct_l3_${target}.json" "L3 restore"
         log "  target ${target} tokens: L1 hit run after restore (must match expected markers)"
         BENCH_MIN_CACHE_HIT_RATIO="${CORRECT_MIN_HIT_RATIO}" BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 \
-            run_one "unused" "${RUNDIR}/correct_l1_${target}.json" "" --prompt-file "${PF[$target]}" --max-tokens 48 --ignore-eos --no-thinking \
+            run_one "unused" "${RUNDIR}/correct_l1_${target}.json" "" --prompt-file "${PF[$target]}" --max-tokens 48 --ignore-eos --no-thinking --cache-salt "correct_${target}" \
             --full-text-out "${RUNDIR}/correct_l1_${target}.ans" --must-match-markers
         log_metrics_line "${RUNDIR}/correct_l1_${target}.json" "L1 hit"
         if needs_replay "${RUNDIR}/correct_l1_${target}.json"; then
             log "  target ${target} tokens: marker omission on L1 hit; immediate L1 replay"
             BENCH_MIN_CACHE_HIT_RATIO="${CORRECT_MIN_HIT_RATIO}" BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 \
-                run_one "unused" "${RUNDIR}/correct_l1_replay_${target}.json" "" --prompt-file "${PF[$target]}" --max-tokens 48 --ignore-eos --no-thinking \
+                run_one "unused" "${RUNDIR}/correct_l1_replay_${target}.json" "" --prompt-file "${PF[$target]}" --max-tokens 48 --ignore-eos --no-thinking --cache-salt "correct_${target}" \
                 --full-text-out "${RUNDIR}/correct_l1_replay_${target}.ans" --must-match-markers
             log_metrics_line "${RUNDIR}/correct_l1_replay_${target}.json" "L1 replay"
         fi
@@ -492,7 +494,7 @@ correctness_bench() {
     pids=()
     start_ns=$(date +%s%N)
     for i in "${!CC_TAG[@]}"; do
-        ( BENCH_MIN_CACHE_HIT_RATIO="${CORRECT_CONC_MIN_HIT_RATIO}" BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 run_one "unused" "${RUNDIR}/correctcc_l3_${CC_TAG[$i]}.json" "" --prompt-file "${CC_PF[$i]}" --max-tokens 48 --ignore-eos --no-thinking --must-match-markers ) &
+        ( BENCH_MIN_CACHE_HIT_RATIO="${CORRECT_CONC_MIN_HIT_RATIO}" BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 run_one "unused" "${RUNDIR}/correctcc_l3_${CC_TAG[$i]}.json" "" --prompt-file "${CC_PF[$i]}" --max-tokens 48 --ignore-eos --no-thinking --cache-salt "cc_${CC_TAG[$i]}" --must-match-markers ) &
         pids+=($!)
     done
     for pid in "${pids[@]}"; do
@@ -513,7 +515,7 @@ correctness_bench() {
         if needs_replay "${RUNDIR}/correctcc_l3_${tag}.json"; then
             log "  concurrent ${tag}: marker omission on first L3 restore; immediate L1 replay"
             BENCH_MIN_CACHE_HIT_RATIO="${CORRECT_CONC_MIN_HIT_RATIO}" BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 \
-                run_one "unused" "${RUNDIR}/correctcc_replay_${tag}.json" "" --prompt-file "${CC_PF[$i]}" --max-tokens 48 --ignore-eos --no-thinking \
+                run_one "unused" "${RUNDIR}/correctcc_replay_${tag}.json" "" --prompt-file "${CC_PF[$i]}" --max-tokens 48 --ignore-eos --no-thinking --cache-salt "cc_${tag}" \
                 --full-text-out "${RUNDIR}/correctcc_replay_${tag}.ans" --must-match-markers
             log_metrics_line "${RUNDIR}/correctcc_replay_${tag}.json" "L1 replay ${tag}"
         fi
@@ -525,13 +527,13 @@ correctness_bench() {
         sys_f="${SE_SYS[$tag]}"
         pf="${RUNDIR}/sess_prompt_${tag}_$$.txt"
         BENCH_MIN_CACHE_HIT_RATIO="${CORRECT_SESSION_MIN_HIT}" BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 \
-            run_one "unused" "${RUNDIR}/session_l3_${tag}.json" "" --prompt-file "${pf}" --system-file "${sys_f}" --max-tokens 80 --ignore-eos --no-thinking \
+            run_one "unused" "${RUNDIR}/session_l3_${tag}.json" "" --prompt-file "${pf}" --system-file "${sys_f}" --max-tokens 80 --ignore-eos --no-thinking --cache-salt "sess_${tag}" \
             --full-text-out "${RUNDIR}/session_l3_${tag}.ans" --must-match-markers
         log_metrics_line "${RUNDIR}/session_l3_${tag}.json" "L3 restore ${tag}"
         if needs_replay "${RUNDIR}/session_l3_${tag}.json"; then
             log "  session ${tag}: marker omission on first L3 restore; immediate L1 replay"
             BENCH_MIN_CACHE_HIT_RATIO="${CORRECT_SESSION_MIN_HIT}" BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 \
-                run_one "unused" "${RUNDIR}/session_replay_${tag}.json" "" --prompt-file "${pf}" --system-file "${sys_f}" --max-tokens 80 --ignore-eos --no-thinking \
+                run_one "unused" "${RUNDIR}/session_replay_${tag}.json" "" --prompt-file "${pf}" --system-file "${sys_f}" --max-tokens 80 --ignore-eos --no-thinking --cache-salt "sess_${tag}" \
                 --full-text-out "${RUNDIR}/session_replay_${tag}.ans" --must-match-markers
             log_metrics_line "${RUNDIR}/session_replay_${tag}.json" "L1 replay ${tag}"
         fi

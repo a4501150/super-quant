@@ -96,6 +96,13 @@ Examples:
     ap.add_argument("--max-tokens", type=int, default=0)
     ap.add_argument("--ignore-eos", action="store_true")
     ap.add_argument("--no-thinking", action="store_true")
+    ap.add_argument(
+        "--cache-salt",
+        default=None,
+        help="Namespace the radix-tree cache keys for this logical session; "
+        "requests that must hit each other share a salt, unrelated sessions "
+        "take distinct ones.",
+    )
     a = ap.parse_args()
     if a.prompt_file:
         with open(a.prompt_file) as f:
@@ -130,6 +137,8 @@ Examples:
         body["max_tokens"] = a.max_tokens
     if a.ignore_eos:
         body["ignore_eos"] = True
+    if a.cache_salt:
+        body["cache_salt"] = a.cache_salt
     req = Request(
         a.url,
         data=json.dumps(body).encode(),
