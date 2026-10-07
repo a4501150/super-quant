@@ -191,21 +191,32 @@ def digest_check(cold_log, restore_log):
 def omission_only(metrics):
     """True when a failed probe's only marker defect is omission.
 
-    The reported markers must form a strict in-order subsequence of the
-    expected sequence: any foreign marker or reordering keeps the probe a
-    hard failure.
+    The reported markers must form an in-order subsequence of the expected
+    sequence. A re-emit of an already-reported marker is also accepted: the
+    batch-sensitive tail flip often repeats a recent marker instead of
+    stopping, and with exact digests plus a complete same-prompt witness
+    that is a generation difference, not corruption. Any foreign marker or
+    a first occurrence out of order keeps the probe a hard failure.
     """
     expected = metrics.get("expected_markers") or []
     reported = metrics.get("response_markers") or []
-    if not expected or len(reported) >= len(expected):
+    if not expected:
         return False
     pos = -1
+    seen = set()
     for marker in reported:
         rest = expected[pos + 1 :]
-        if marker not in rest:
+        if marker in rest:
+            pos = pos + 1 + rest.index(marker)
+            seen.add(marker)
+        elif marker in seen:
+            continue
+        else:
             return False
-        pos = pos + 1 + rest.index(marker)
-    return True
+    # Length parity is not completeness: a duplicated marker replaces the
+    # missing one. What matters is that at least one expected marker went
+    # unreported.
+    return len(seen) < len(expected)
 
 
 def replay_is_complete(metrics, replay):
