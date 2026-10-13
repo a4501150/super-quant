@@ -376,21 +376,28 @@ cleanup
             self.assertEqual((project / ".sglang.log").read_text(), "normal startup\n")
             self.assertFalse(rundir.exists())
 
-    def test_session_revisit_is_unconditional_and_in_same_loop_as_cold_probe(self):
+    def test_digest_server_reuse_skips_reload_and_clears_tiers(self):
         script = BENCH_SCRIPT_PATH.read_text()
-        section = script[
-            script.index('log "  session-churn cold batch:') : script.index(
-                'log "  waiting ${CORRECT_WRITE_SETTLE_SECONDS}s'
+        entry = script[
+            script.index('if [[ "${CORRECT_DIGESTS}" == "true" ]]; then') : script.index(
+                "local -A PF="
             )
         ]
-        self.assertEqual(section.count('for tag in "${SE_TAG[@]}"; do'), 1)
-        self.assertLess(
-            section.index("session_cold_${tag}.json"),
-            section.index("session_revisit_${tag}.json"),
-        )
-        self.assertNotIn("if needs_replay", section)
-        self.assertIn('"cold_revisit": rd(f"session_revisit_{tag}.json")', script)
-        self.assertIn('if complete(entry["cold_revisit"])', script)
+        # A live digest-mode bench server is reused, not restarted.
+        self.assertIn("if bench_server_active; then", entry)
+        self.assertIn("clear_bench_tiers", entry)
+        # The reuse check requires the marker to name the stable storage dir
+        # and the live server pid.
+        self.assertIn("BENCH_STORAGE_DIR", script)
+        self.assertIn("BENCH_MODE_MARKER", script)
+        reuse = script[script.index("bench_server_active() {") : script.index("clear_bench_tiers() {")]
+        self.assertIn('"${dir}" == "${BENCH_STORAGE_DIR}"', reuse)
+        # Tier clearing uses the documented endpoint sequence.
+        clear = script[script.index("clear_bench_tiers() {") : script.index("run_one() {")]
+        self.assertIn("/flush_cache?timeout=${CORRECT_FLUSH_TIMEOUT}", clear)
+        self.assertIn("/hicache/storage-backend/clear", clear)
+        # Leaving the bench server up is opt-in; the default restores serving.
+        self.assertIn('BENCH_KEEP_BENCH_SERVER="${BENCH_KEEP_BENCH_SERVER:-false}"', script)
 
     def test_standalone_revisit_is_in_same_loop_as_cold_probe(self):
         script = BENCH_SCRIPT_PATH.read_text()

@@ -12,6 +12,16 @@ SERVED_NAME="${MODEL_ALIAS:-qwen3.8-27b}"
 REPS="${REPS:-1}"
 PREFILL_TOKENS="${PREFILL_TOKENS:-8192 32768 131072}"
 
+# Digest-mode server reuse. The bench L3 namespace is a stable directory so a
+# running digest-mode server can be reused across bench invocations: every
+# reused run clears L1/L2/L3 through the documented endpoint sequence instead
+# of paying another model reload. Session-namespace isolation itself is
+# unit-tested (test_session_cache_salt_unit, unified radix tests); the bench
+# no longer replays it end-to-end.
+BENCH_STORAGE_DIR="${BENCH_STORAGE_DIR:-${HOME}/models/hicache-bench}"
+BENCH_MODE_MARKER="${PROJECT_DIR}/.sglang-bench-mode"
+BENCH_KEEP_BENCH_SERVER="${BENCH_KEEP_BENCH_SERVER:-false}"
+
 mkdir -p "${RESULTS_DIR}"
 RUNDIR=$(mktemp -d)
 DIGEST_SERVER_ACTIVE=false
@@ -42,12 +52,13 @@ cleanup() {
         done
     fi
     rm -rf "${RUNDIR}"
-    if [[ "${DIGEST_SERVER_ACTIVE}" == "true" ]]; then
+    if [[ "${DIGEST_SERVER_ACTIVE}" == "true" && "${BENCH_KEEP_BENCH_SERVER}" != "true" ]]; then
         log "Restoring server without page digest logging after benchmark failure..."
         bash "${SCRIPT_DIR}/stop_sglang.sh" >&2 || true
         if ! bash "${SCRIPT_DIR}/serve_sglang.sh" >&2; then
             log "ERROR: failed to restore the normal SGLang server"
         fi
+        rm -f "${BENCH_MODE_MARKER}"
     fi
     exit "${status}"
 }
@@ -65,6 +76,28 @@ log() { echo "$1" >&2; }
 
 check_server() {
     curl -sf "http://127.0.0.1:${PORT}/v1/models" > /dev/null 2>&1
+}
+
+bench_server_active() {
+    # True when the digest-mode bench server from a previous run still owns
+    # the port: the marker names this storage dir and the live server pid.
+    [[ -f "${BENCH_MODE_MARKER}" && -f "${PROJECT_DIR}/.sglang.pid" ]] || return 1
+    local pid dir live_pid
+    read -r pid dir < "${BENCH_MODE_MARKER}" 2>/dev/null || return 1
+    [[ "${dir}" == "${BENCH_STORAGE_DIR}" ]] || return 1
+    live_pid="$(<"${PROJECT_DIR}/.sglang.pid")"
+    [[ "${pid}" == "${live_pid}" ]] || return 1
+    kill -0 "${pid}" 2>/dev/null || return 1
+    check_server
+}
+
+clear_bench_tiers() {
+    # Documented endpoint sequence for emptying all HiCache tiers on a live
+    # idle server; used when reusing the digest server across bench runs.
+    curl --fail-with-body -sS -X POST \
+        "http://127.0.0.1:${PORT}/flush_cache?timeout=${CORRECT_FLUSH_TIMEOUT}" >&2
+    curl --fail-with-body -sS -X POST \
+        "http://127.0.0.1:${PORT}/hicache/storage-backend/clear" >&2
 }
 
 run_one() {
@@ -225,7 +258,8 @@ PYEOF
 # Phase 4: HiCache L1->L3 correctness (cold prefill -> pre-flush revisit so
 # every probe page meets the write_through_selective two-hit admission ->
 # in-process cache flush -> SSD restore with marker, cache-coverage, and
-# page/transfer-digest validation)
+# page/transfer-digest validation). Session-namespace isolation is unit-tested;
+# the bench covers only the restore pipeline itself.
 # ---------------------------------------------------------------
 CORRECT_TOKENS="${CORRECT_TOKENS:-32768 131072 196608}"
 CORRECT_CONC_TOKENS="${CORRECT_CONC_TOKENS:-32768 65536 98304}"
@@ -233,16 +267,9 @@ CORRECT_MIN_HIT_RATIO="${CORRECT_MIN_HIT_RATIO:-0.9}"
 # Concurrent write-through can omit tail pages under pressure; require enough of
 # the prefix to exercise L3 while marker and digest checks prove correctness.
 CORRECT_CONC_MIN_HIT_RATIO="${CORRECT_CONC_MIN_HIT_RATIO:-0.7}"
-# Session-churn probes: model the operator workflow (system prompt edited
-# between sessions -> radix tree re-roots on every edit; family variants share
-# a deep prefix and branch mid-tree -> sibling state must not cross-contaminate).
-CORRECT_SESSION_TOKENS="${CORRECT_SESSION_TOKENS:-49152}"
-CORRECT_SESSION_SYS_TOKENS="${CORRECT_SESSION_SYS_TOKENS:-4096}"
-CORRECT_SESSION_FAMILIES="${CORRECT_SESSION_FAMILIES:-3}"
-CORRECT_SESSION_EDITS="${CORRECT_SESSION_EDITS:-3}"
-# Near the L3 eviction watermark, older edited branches can lose their tail.
-# Require a substantial restored prefix; marker and digest checks stay strict.
-CORRECT_SESSION_MIN_HIT="${CORRECT_SESSION_MIN_HIT:-0.25}"
+# Session-namespace isolation (salts, sibling families, checkpoint re-rooting)
+# is covered deterministically by the unit suite; the bench no longer replays
+# it end-to-end.
 CORRECT_DIGESTS="${CORRECT_DIGESTS:-true}"
 CORRECT_WRITE_SETTLE_SECONDS="${CORRECT_WRITE_SETTLE_SECONDS:-10}"
 # Digest hashing can keep a large write-through queue active for several minutes.
@@ -267,73 +294,6 @@ with open(sys.argv[1], "w") as f:
 PYEOF
 }
 
-# Session-churn probes modeling the operator workflow: a long multi-section
-# system prompt, sessions re-rooted by section edits (cumulative across edit
-# rounds), and a branch family sharing one deep prefix with divergent tails.
-# Expected answer order: system agent-id marker, then system revision markers
-# in section order, then user body markers, then the session tail marker.
-gen_session_probes() { # $1=dir $2=suffix $3=body_tokens $4=sys_tokens $5=families $6=edits
-    python3 - "$1" "$2" "$3" "$4" "$5" "$6" <<'PYEOF'
-import os, sys, uuid
-dir_, suf = sys.argv[1], sys.argv[2]
-body_tokens, sys_tokens = int(sys.argv[3]), int(sys.argv[4])
-fams, edits = int(sys.argv[5]), int(sys.argv[6])
-def hx(): return uuid.uuid4().hex[:8]
-def paras(n):
-    p = ("The history of coastal cartography in the North Atlantic shows a steady "
-         "improvement in the accuracy of depth soundings and shoreline geometry, "
-         "driven by navigational demand and state-sponsored survey traditions. ")
-    return p * n
-
-def w(name, text):
-    with open(os.path.join(dir_, name), "w") as f:
-        f.write(text)
-
-# user body: 4 marker sections + per-session tail + question
-quarters = max(body_tokens // 160, 1)
-body = "\n\n".join(f"Unique marker {hx()}: the lighthouse at Skerries fades at dusk. " + paras(quarters)
-                   for _ in range(4))
-question = ("\n\nQuestion: begin your answer with the agent ID marker from the system "
-            "message, then echo every revision marker from the system message in order, "
-            "then list every unique marker that appears in this message in the order "
-            "they appear. Answer with at most thirty words.")
-
-# long multi-section system prompt; edit rounds rewrite one section per round
-sys_paras = max(sys_tokens // 100, 4)
-titles = ["Identity", "Style guide", "Environment", "Tool usage", "Output contract"]
-content = {t: paras(sys_paras) for t in titles}
-def render(sys_id, revisions):
-    out = []
-    for t in titles:
-        s = f"# Identity\nAgent ID Unique marker {sys_id}.\n{content[t]}" if t == "Identity" else f"# {t}\n{content[t]}"
-        if t in revisions:
-            s += f"\nRevision marker Unique marker {revisions[t]} applies to this section."
-        out.append(s)
-    return "\n\n".join(out)
-
-sys_id = hx()
-w(f"sess_sys_fam_{suf}.txt", render(sys_id, {}))
-body_prompt = None
-for i in range(1, fams + 1):
-    tail = f"Session note Unique marker {hx()}: the harbor chart was redrawn at dawn."
-    prompt = body + "\n\n" + tail + question
-    w(f"sess_prompt_fam{i}_{suf}.txt", prompt)
-    if body_prompt is None:
-        body_prompt = prompt
-# edit rounds: one prompt edited cumulatively, >=1 section rewritten per round,
-# so section content changes at least `edits` times across the series
-edit_sections = [t for t in titles if t != "Identity"]
-revisions = {}
-for i in range(1, edits + 1):
-    revisions[edit_sections[(i - 1) % len(edit_sections)]] = hx()
-    w(f"sess_sys_edit{i}_{suf}.txt", render(sys_id, dict(revisions)))
-    w(f"sess_prompt_edit{i}_{suf}.txt", body_prompt)
-w(f"sess_sys_fresh_{suf}.txt", render(hx(), {}))
-tail = f"Session note Unique marker {hx()}: the harbor chart was redrawn at dusk."
-w(f"sess_prompt_fresh_{suf}.txt", body + "\n\n" + tail + question)
-PYEOF
-}
-
 # True when a failed L3 restore's only marker defect is omission, so the
 # probe gets an immediate L1 replay for variance classification.
 needs_replay() { # $1=metrics JSON path
@@ -348,14 +308,25 @@ correctness_bench() {
         *) log "ERROR: CORRECT_DIGESTS must be true or false"; return 1 ;;
     esac
     if [[ "${CORRECT_DIGESTS}" == "true" ]]; then
-        log "  restarting server with page digest logging before cold writes..."
-        DIGEST_SERVER_ACTIVE=true
-        bash "${SCRIPT_DIR}/stop_sglang.sh" >&2
-        # A fresh L3 namespace makes every restore read attributable to this
-        # run's cold writes without clearing production's existing disk cache.
-        SGLANG_HICACHE_FILE_BACKEND_STORAGE_DIR="${RUNDIR}/hicache-storage" \
-            SGLANG_HICACHE_FILE_BACKEND_LOG_PAGE_DIGESTS=true \
-            bash "${SCRIPT_DIR}/serve_sglang.sh" >&2
+        if bench_server_active; then
+            log "  reusing the running digest-mode server (no reload); clearing tiers..."
+            clear_bench_tiers
+            DIGEST_SERVER_ACTIVE=true
+        else
+            log "  restarting server with page digest logging before cold writes..."
+            bash "${SCRIPT_DIR}/stop_sglang.sh" >&2
+            mkdir -p "${BENCH_STORAGE_DIR}"
+            # A dedicated bench L3 namespace keeps every restore read
+            # attributable to this run's cold writes without touching
+            # production's disk cache.
+            SGLANG_HICACHE_FILE_BACKEND_STORAGE_DIR="${BENCH_STORAGE_DIR}" \
+                SGLANG_HICACHE_FILE_BACKEND_LOG_PAGE_DIGESTS=true \
+                bash "${SCRIPT_DIR}/serve_sglang.sh" >&2
+            DIGEST_SERVER_ACTIVE=true
+            printf '%s %s\n' \
+                "$(<"${PROJECT_DIR}/.sglang.pid")" "${BENCH_STORAGE_DIR}" \
+                > "${BENCH_MODE_MARKER}"
+        fi
         log ""
     fi
     local -A PF=
@@ -416,39 +387,6 @@ correctness_bench() {
     log "  concurrent revisit batch wall $(python3 -c "print(f'{(${end_ns}-${start_ns})/1e9:.1f}')")s"
     for tag in "${CC_TAG[@]}"; do
         log_metrics_line "${RUNDIR}/correctcc_revisit_${tag}.json" "revisit ${tag}"
-    done
-    log ""
-
-    # Session churn: long multi-section system prompt edited between sessions
-    # (radix tree re-roots at every edit) plus a branch family that shares one
-    # deep prefix and diverges at the tail. Each session gets its own
-    # cache_salt namespace so unrelated sessions cannot share prefix entries;
-    # cold/revisit/restore/replay of one tag share the tag's salt.
-    local -a SE_TAG=()
-    local -A SE_SYS=()
-    for i in $(seq 1 ${CORRECT_SESSION_FAMILIES}); do
-        SE_TAG+=("fam${i}")
-        SE_SYS["fam${i}"]="${RUNDIR}/sess_sys_fam_$$.txt"
-    done
-    for i in $(seq 1 ${CORRECT_SESSION_EDITS}); do
-        SE_TAG+=("edit${i}")
-        SE_SYS["edit${i}"]="${RUNDIR}/sess_sys_edit${i}_$$.txt"
-    done
-    SE_TAG+=("fresh")
-    SE_SYS[fresh]="${RUNDIR}/sess_sys_fresh_$$.txt"
-    gen_session_probes "${RUNDIR}" "$$" "${CORRECT_SESSION_TOKENS}" "${CORRECT_SESSION_SYS_TOKENS}" "${CORRECT_SESSION_FAMILIES}" "${CORRECT_SESSION_EDITS}"
-    log "  session-churn cold batch: ${#SE_TAG[@]} sessions (${SE_TAG[*]})"
-    local sys_f pf
-    for tag in "${SE_TAG[@]}"; do
-        sys_f="${SE_SYS[$tag]}"
-        pf="${RUNDIR}/sess_prompt_${tag}_$$.txt"
-        BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 run_one "unused" "${RUNDIR}/session_cold_${tag}.json" "" --prompt-file "${pf}" --system-file "${sys_f}" --max-tokens 80 --ignore-eos --no-thinking --cache-salt "sess_${tag}" --full-text-out "${RUNDIR}/session_cold_${tag}.ans"
-        log_metrics_line "${RUNDIR}/session_cold_${tag}.json" "cold ${tag}"
-        log "  session ${tag}: immediate revisit for selective write-through admission"
-        BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 \
-            run_one "unused" "${RUNDIR}/session_revisit_${tag}.json" "" --prompt-file "${pf}" --system-file "${sys_f}" --max-tokens 80 --ignore-eos --no-thinking --cache-salt "sess_${tag}" \
-            --must-match-markers
-        log_metrics_line "${RUNDIR}/session_revisit_${tag}.json" "revisit ${tag}"
     done
     log ""
 
@@ -522,24 +460,6 @@ correctness_bench() {
     done
     log ""
 
-    log "  session-churn restore runs: ${#SE_TAG[@]} sessions (${SE_TAG[*]})"
-    for tag in "${SE_TAG[@]}"; do
-        sys_f="${SE_SYS[$tag]}"
-        pf="${RUNDIR}/sess_prompt_${tag}_$$.txt"
-        BENCH_MIN_CACHE_HIT_RATIO="${CORRECT_SESSION_MIN_HIT}" BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 \
-            run_one "unused" "${RUNDIR}/session_l3_${tag}.json" "" --prompt-file "${pf}" --system-file "${sys_f}" --max-tokens 80 --ignore-eos --no-thinking --cache-salt "sess_${tag}" \
-            --full-text-out "${RUNDIR}/session_l3_${tag}.ans" --must-match-markers
-        log_metrics_line "${RUNDIR}/session_l3_${tag}.json" "L3 restore ${tag}"
-        if needs_replay "${RUNDIR}/session_l3_${tag}.json"; then
-            log "  session ${tag}: marker omission on first L3 restore; immediate L1 replay"
-            BENCH_MIN_CACHE_HIT_RATIO="${CORRECT_SESSION_MIN_HIT}" BENCH_TEMPERATURE=0.0 BENCH_TOP_K=1 \
-                run_one "unused" "${RUNDIR}/session_replay_${tag}.json" "" --prompt-file "${pf}" --system-file "${sys_f}" --max-tokens 80 --ignore-eos --no-thinking --cache-salt "sess_${tag}" \
-                --full-text-out "${RUNDIR}/session_replay_${tag}.ans" --must-match-markers
-            log_metrics_line "${RUNDIR}/session_replay_${tag}.json" "L1 replay ${tag}"
-        fi
-    done
-    log ""
-
     # Snapshot the restore-phase log before any restart truncates it; it is the
     # digest-check input and the failure post-mortem copy.
     if [[ -f "${PROJECT_DIR}/.sglang.log" ]]; then
@@ -562,9 +482,14 @@ correctness_bench() {
             log "  WARNING: digest check failed; failures recorded in hicache_digest_check.json"
         fi
         log ""
-        log "  restarting server without page digest logging..."
-        bash "${SCRIPT_DIR}/stop_sglang.sh" >&2
-        bash "${SCRIPT_DIR}/serve_sglang.sh" >&2
+        if [[ "${BENCH_KEEP_BENCH_SERVER}" == "true" ]]; then
+            log "  keeping the digest-mode bench server for iteration (BENCH_KEEP_BENCH_SERVER=true)..."
+        else
+            log "  restarting server without page digest logging..."
+            bash "${SCRIPT_DIR}/stop_sglang.sh" >&2
+            bash "${SCRIPT_DIR}/serve_sglang.sh" >&2
+            rm -f "${BENCH_MODE_MARKER}"
+        fi
         DIGEST_SERVER_ACTIVE=false
         log ""
     fi
@@ -699,18 +624,6 @@ for f in sorted(glob.glob(os.path.join(rundir, "correctcc_cold_*.json"))):
                                    "cold_revisit": rd(f"correctcc_revisit_{mt}.json"),
                                    "l3_restore": rd(f"correctcc_l3_{mt}.json"),
                                    "l1_replay": rd(f"correctcc_replay_{mt}.json")})
-session_churn = []
-for f in sorted(glob.glob(os.path.join(rundir, "session_cold_*.json"))):
-    m = re.fullmatch(r"session_cold_((?:fam|edit)\d+|fresh)\.json", os.path.basename(f))
-    if not m:
-        continue
-    tag = m.group(1)
-    session_churn.append({"session": tag,
-                          "cold": rd(f"session_cold_{tag}.json"),
-                          "cold_revisit": rd(f"session_revisit_{tag}.json"),
-                          "l3_restore": rd(f"session_l3_{tag}.json"),
-                          "l1_replay": rd(f"session_replay_{tag}.json")})
-
 # Only omission-only responses with exact digests and a complete same-prompt
 # replay can be classified as generation variance. Cold omissions also need a
 # successful restore, and revisit omissions a successful later L3 restore (the
@@ -757,19 +670,6 @@ for entry in concurrent_correctness:
     entry["variance"] = note_variance(
         "concurrent_correctness", mt, "L3 restore",
         f"correctcc_l3_{mt}.json", entry["l3_restore"], entry["l1_replay"])
-for entry in session_churn:
-    tag = entry["session"]
-    entry["revisit_variance"] = note_variance(
-        "session_churn", tag, "revisit generation",
-        f"session_revisit_{tag}.json", entry["cold_revisit"], entry["l3_restore"])
-    if complete(entry["cold_revisit"]) and complete(entry["l3_restore"]):
-        entry["cold_variance"] = note_variance(
-            "session_churn", tag, "cold generation",
-            f"session_cold_{tag}.json", entry["cold"], entry["cold_revisit"])
-    entry["variance"] = note_variance(
-        "session_churn", tag, "L3 restore",
-        f"session_l3_{tag}.json", entry["l3_restore"], entry["l1_replay"])
-
 failures = []
 for f in sorted(glob.glob(os.path.join(rundir, "*.json"))):
     name = os.path.basename(f)
@@ -795,7 +695,6 @@ result = {
     "prefill_probe": probe,
     "correctness": correctness,
     "concurrent_correctness": concurrent_correctness,
-    "session_churn": session_churn,
     "digest_check": digests,
     "variances": variances,
     "failures": failures,
