@@ -67,10 +67,16 @@ if [[ -n "${SGLANG_PLE_SAFETENSORS_DIR:-}" ]]; then
         echo "ERROR: PLE checkpoint index not found: ${SGLANG_PLE_SAFETENSORS_DIR}/model.safetensors.index.json" >&2
         exit 1
     fi
-    export SGLANG_QWEN4_PLE_SAFETENSORS="${SGLANG_PLE_SAFETENSORS_DIR}"
+    # The safetensors PLE backend reads the table from the served checkpoint.
+    if [[ "$(realpath "${SGLANG_PLE_SAFETENSORS_DIR}")" != "$(realpath "${MODEL_PATH}")" ]]; then
+        echo "ERROR: SGLANG_PLE_SAFETENSORS_DIR must be the served checkpoint: ${MODEL_PATH}" >&2
+        exit 1
+    fi
 fi
 
 ensure_sglang
+# JIT kernel builds (FlashInfer, sglang jit) call the venv's ninja by name.
+export PATH="${SGLANG_VENV}/bin:${PATH}"
 
 echo "=== Starting SGLang Server ==="
 echo "Model:   $MODEL_PATH"
@@ -145,6 +151,7 @@ if [[ "${SGLANG_ENABLE_HIERARCHICAL_CACHE:-}" == "true" && "${SGLANG_DISABLE_RAD
         --hicache-write-policy "${SGLANG_HICACHE_WRITE_POLICY:-write_through}"
     )
     [[ -n "$HICACHE_SIZE" ]] && ARGS+=(--hicache-size "$HICACHE_SIZE")
+    [[ -n "${SGLANG_HICACHE_HOST_MEMORY_MODE:-}" ]] && ARGS+=(--hicache-host-memory-mode "$SGLANG_HICACHE_HOST_MEMORY_MODE")
     export SGLANG_HICACHE_FILE_BACKEND_STORAGE_DIR="${SGLANG_HICACHE_FILE_BACKEND_STORAGE_DIR:-${HOME}/models/hicache}"
     mkdir -p "$SGLANG_HICACHE_FILE_BACKEND_STORAGE_DIR"
     echo "HiCache: backend=${SGLANG_HICACHE_STORAGE_BACKEND:-file} dir=$SGLANG_HICACHE_FILE_BACKEND_STORAGE_DIR size=${HICACHE_SIZE:-ratio-default}GB"
@@ -167,10 +174,7 @@ if [[ "$SPEC_ALGO" != "none" ]] && { [[ "$SPEC_ALGO" == "NEXTN" ]] || [[ -n "$DR
     [[ -n "${SGLANG_SPECULATIVE_TOKEN_MAP:-}" && -f "${SGLANG_SPECULATIVE_TOKEN_MAP}" ]] && ARGS+=(--speculative-token-map "$SGLANG_SPECULATIVE_TOKEN_MAP")
 fi
 
-# gdn-mtp-cache-mode controls HiCache persistence of the MTP draft layer's
-# GDN state. Must be passed even when spec is off — SGLang defaults to 'full'
-# which crashes if no MTP draft is loaded.
-[[ -n "${SGLANG_GDN_MTP_CACHE_MODE:-}" ]] && ARGS+=(--gdn-mtp-cache-mode "$SGLANG_GDN_MTP_CACHE_MODE")
+[[ -n "${SGLANG_PLE_SAFETENSORS_DIR:-}" ]] && ARGS+=(--ple-offload-embedding --ple-offload-backend safetensors)
 
 [[ -n "${SGLANG_REASONING_PARSER:-}" ]] && ARGS+=(--reasoning-parser "$SGLANG_REASONING_PARSER")
 [[ -n "${SGLANG_TOOL_CALL_PARSER:-}" ]] && ARGS+=(--tool-call-parser "$SGLANG_TOOL_CALL_PARSER")
