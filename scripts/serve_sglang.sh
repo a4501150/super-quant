@@ -167,6 +167,7 @@ if [[ "$SPEC_ALGO" != "none" ]] && { [[ "$SPEC_ALGO" == "NEXTN" ]] || [[ -n "$DR
         --speculative-draft-attention-backend "${SGLANG_SPECULATIVE_DRAFT_ATTENTION_BACKEND:-flashinfer}"
     )
     [[ -n "$DRAFT_MODEL" ]] && ARGS+=(--speculative-draft-model-path "$DRAFT_MODEL")
+    [[ -n "${SGLANG_SPECULATIVE_DRAFT_WINDOW_SIZE:-}" ]] && ARGS+=(--speculative-draft-window-size "$SGLANG_SPECULATIVE_DRAFT_WINDOW_SIZE")
     [[ -n "${SGLANG_SPECULATIVE_NUM_STEPS:-}" ]] && ARGS+=(--speculative-num-steps "$SGLANG_SPECULATIVE_NUM_STEPS")
     [[ -n "${SGLANG_SPECULATIVE_EAGLE_TOPK:-}" ]] && ARGS+=(--speculative-eagle-topk "$SGLANG_SPECULATIVE_EAGLE_TOPK")
     [[ -n "${SGLANG_SPECULATIVE_ACCEPT_THRESHOLD_SINGLE:-}" ]] && ARGS+=(--speculative-accept-threshold-single "$SGLANG_SPECULATIVE_ACCEPT_THRESHOLD_SINGLE")
