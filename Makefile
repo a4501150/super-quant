@@ -171,7 +171,7 @@ quantize-nvfp4:
 		--calibration-dir $(CALIBRATION_DIR) \
 		--output-dir $(HOME)/models/nvfp4/$(MODEL_NAME)-NVFP4
 
-NVFP4_CHECKPOINT := $(HOME)/models/nvfp4/$(MODEL_NAME)-NVFP4
+NVFP4_CHECKPOINT ?= $(HOME)/models/nvfp4/$(MODEL_NAME)-NVFP4
 NVFP4_GGUF := $(MODELS_DIR)/$(MODEL_NAME)-NVFP4.gguf
 CONVERT_SCRIPT := $(call model_var,CONVERT_SCRIPT)
 
