@@ -1,4 +1,4 @@
-.PHONY: all setup setup-sglang setup-vllm download convert calibrate-corpus recalibrate-corpus calibrate recalibrate package-calibration-corpus imatrix sensitivity quantize quantize-nvfp4 convert-nvfp4 bench-llamacpp bench-sglang compare compare-md serve serve-llama stop serve-vllm stop-vllm serve-infernix stop-infernix awq-prescale awq-convert awq-imatrix awq-sensitivity awq-quantize awq-all test clean help
+.PHONY: all setup setup-sglang setup-vllm download convert calibrate-corpus recalibrate-corpus calibrate recalibrate package-calibration-corpus imatrix sensitivity quantize quantize-nvfp4 convert-nvfp4 bench-llamacpp bench-sglang compare compare-md serve serve-llama stop serve-vllm stop-vllm serve-infernix stop-infernix infernix-placement infernix-gaming infernix-full awq-prescale awq-convert awq-imatrix awq-sensitivity awq-quantize awq-all test clean help
 
 SHELL := /bin/bash
 PROJECT_DIR := $(shell pwd)
@@ -82,6 +82,9 @@ help:
 	@echo "  make stop            Stop SGLang"
 	@echo "  make serve-infernix  Start Infernix (background; survives the shell)"
 	@echo "  make stop-infernix   Stop Infernix"
+	@echo "  make infernix-placement RESERVE_VRAM_GB=32 RESERVE_RAM_GB=24"
+	@echo "  make infernix-gaming  Switch Infernix to the gaming profile (reserves in model.env)"
+	@echo "  make infernix-full    Switch Infernix to every expert in VRAM"
 	@echo "  make stop-vllm       Stop vLLM"
 	@echo "  Examples: make serve-llama SPEC_TYPE=none"
 	@echo "            make serve-llama SPEC_TYPE=mtp QUANT=UD-Q6_K CTX=262144 PARALLEL=3"
@@ -219,6 +222,15 @@ serve-infernix:
 
 stop-infernix:
 	@MODEL_DIR=$(MODEL_DIR) bash $(SCRIPTS)/stop_infernix.sh
+
+infernix-placement:
+	@MODEL_DIR=$(MODEL_DIR) bash -c 'source configs/model.env && python3 $(SCRIPTS)/infernix_placement.py --reserve-vram-gb "$${RESERVE_VRAM_GB:-$$INFERNIX_GAMING_RESERVE_VRAM_GB}" --reserve-ram-gb "$${RESERVE_RAM_GB:-$$INFERNIX_GAMING_RESERVE_RAM_GB}"'
+
+infernix-gaming:
+	@MODEL_DIR=$(MODEL_DIR) bash -c 'source configs/model.env && python3 $(SCRIPTS)/infernix_placement.py --reserve-vram-gb "$$INFERNIX_GAMING_RESERVE_VRAM_GB" --reserve-ram-gb "$$INFERNIX_GAMING_RESERVE_RAM_GB"'
+
+infernix-full:
+	@python3 $(SCRIPTS)/infernix_placement.py --shares vram=all
 
 bench-sglang:
 	@MODEL_DIR=$(MODEL_DIR) $(UV) bash $(SCRIPTS)/11_bench_sglang.sh
