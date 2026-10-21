@@ -5,98 +5,98 @@
   {
    "phase": "chat",
    "i": 0,
-   "hit_pct": 85.6069098790344,
-   "promotions": 2769
+   "hit_pct": 86.22790059723737,
+   "promotions": 2648
   },
   {
    "phase": "chat",
    "i": 1,
-   "hit_pct": 86.79137395850351,
-   "promotions": 2273
+   "hit_pct": 87.23961023310264,
+   "promotions": 2309
   },
   {
    "phase": "chat",
    "i": 2,
-   "hit_pct": 86.45397320708021,
-   "promotions": 2478
+   "hit_pct": 86.49694086384433,
+   "promotions": 2488
   },
   {
    "phase": "chat",
    "i": 3,
-   "hit_pct": 94.27728363986336,
-   "promotions": 2224
+   "hit_pct": 94.32081031696575,
+   "promotions": 2230
   },
   {
    "phase": "chat",
    "i": 4,
-   "hit_pct": 93.40409775364108,
-   "promotions": 1839
+   "hit_pct": 93.36568380500815,
+   "promotions": 1822
   },
   {
    "phase": "chat",
    "i": 5,
-   "hit_pct": 91.52454671214505,
-   "promotions": 2383
+   "hit_pct": 91.97083422689256,
+   "promotions": 2354
   },
   {
    "phase": "chat",
    "i": 6,
-   "hit_pct": 94.5336667226708,
-   "promotions": 2182
+   "hit_pct": 95.5116552340588,
+   "promotions": 1949
   },
   {
    "phase": "chat",
    "i": 7,
-   "hit_pct": 89.01622398993304,
-   "promotions": 2057
+   "hit_pct": 88.75066202404696,
+   "promotions": 2014
   },
   {
    "phase": "code",
    "i": 0,
-   "hit_pct": 62.41789764349481,
-   "promotions": 1557
+   "hit_pct": 64.98511651083807,
+   "promotions": 1674
   },
   {
    "phase": "code",
    "i": 1,
-   "hit_pct": 72.02549394518802,
-   "promotions": 1840
+   "hit_pct": 74.21116199486688,
+   "promotions": 1860
   },
   {
    "phase": "code",
    "i": 2,
-   "hit_pct": 78.73964719453554,
-   "promotions": 1460
+   "hit_pct": 79.42108546475359,
+   "promotions": 1522
   },
   {
    "phase": "code",
    "i": 3,
-   "hit_pct": 84.05589106523686,
+   "hit_pct": 82.92025363325003,
    "promotions": 1962
   },
   {
    "phase": "code",
    "i": 4,
-   "hit_pct": 78.61190737242573,
-   "promotions": 1282
+   "hit_pct": 78.50358647838206,
+   "promotions": 1277
   },
   {
    "phase": "code",
    "i": 5,
-   "hit_pct": 88.40281433973101,
-   "promotions": 1927
+   "hit_pct": 88.07012474112604,
+   "promotions": 1922
   },
   {
    "phase": "code",
    "i": 6,
-   "hit_pct": 84.29390347819351,
-   "promotions": 1360
+   "hit_pct": 83.8588065174168,
+   "promotions": 1341
   },
   {
    "phase": "code",
    "i": 7,
-   "hit_pct": 91.38128204812907,
-   "promotions": 1698
+   "hit_pct": 91.11387082098636,
+   "promotions": 1686
   }
  ]
 }
