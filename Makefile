@@ -1,4 +1,4 @@
-.PHONY: all setup setup-sglang setup-vllm download convert calibrate-corpus recalibrate-corpus calibrate recalibrate package-calibration-corpus imatrix sensitivity quantize quantize-nvfp4 convert-nvfp4 bench-llamacpp bench-sglang compare compare-md serve serve-llama stop serve-vllm stop-vllm awq-prescale awq-convert awq-imatrix awq-sensitivity awq-quantize awq-all test clean help
+.PHONY: all setup setup-sglang setup-vllm download convert calibrate-corpus recalibrate-corpus calibrate recalibrate package-calibration-corpus imatrix sensitivity quantize quantize-nvfp4 convert-nvfp4 bench-llamacpp bench-sglang compare compare-md serve serve-llama stop serve-vllm stop-vllm serve-infernix stop-infernix awq-prescale awq-convert awq-imatrix awq-sensitivity awq-quantize awq-all test clean help
 
 SHELL := /bin/bash
 PROJECT_DIR := $(shell pwd)
@@ -80,6 +80,8 @@ help:
 	@echo "  make serve-vllm      Start vLLM with the active model config"
 	@echo "  make serve-llama     Start llama.cpp with a configured GGUF"
 	@echo "  make stop            Stop SGLang"
+	@echo "  make serve-infernix  Start Infernix (background; survives the shell)"
+	@echo "  make stop-infernix   Stop Infernix"
 	@echo "  make stop-vllm       Stop vLLM"
 	@echo "  Examples: make serve-llama SPEC_TYPE=none"
 	@echo "            make serve-llama SPEC_TYPE=mtp QUANT=UD-Q6_K CTX=262144 PARALLEL=3"
@@ -211,6 +213,12 @@ serve-vllm:
 
 stop-vllm:
 	@bash $(SCRIPTS)/stop_vllm.sh
+
+serve-infernix:
+	@MODEL_DIR=$(MODEL_DIR) bash $(SCRIPTS)/serve_infernix.sh
+
+stop-infernix:
+	@MODEL_DIR=$(MODEL_DIR) bash $(SCRIPTS)/stop_infernix.sh
 
 bench-sglang:
 	@MODEL_DIR=$(MODEL_DIR) $(UV) bash $(SCRIPTS)/11_bench_sglang.sh
