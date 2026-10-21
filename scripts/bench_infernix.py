@@ -1,0 +1,704 @@
+#!/usr/bin/env python3
+"""
+Fast, reusable Infernix benchmark (stdlib only).
+
+Designed to keep the GPU busy: one server boot per run, placements switched
+at runtime through POST /admin/expert-placement, 0.5 s readiness/move polls
+(no fixed sleeps), a thread pool for the concurrent phase, and every speed
+parsed from the server's own request log ("req#N done | ... | prefill X
+tok/s | decode Y tok/s | dflash2 accepted a/b"), never from client timing.
+The script always kills its server on exit (SIGTERM handler + finally).
+
+Usage:
+  # Short-boot proof: N back-to-back boots, each started immediately after
+  # the previous one exits (the async driver-reclaim window that used to
+  # stop the resident warm fill early). Pass = "resident warm fill loaded
+  # 24575 of 24576" on every boot with zero spill warnings.
+  python3 scripts/bench_infernix.py --startup-only 5 \
+      --binary ~/.cache/infernix-snap/infernix-serve-d88bc92 --port 8410 \
+      --out results/infernix_startup
+
+  # Placement matrix in a single boot (switches walk the placements):
+  python3 scripts/bench_infernix.py \
+      --binary ~/.cache/infernix-snap/infernix-serve-d88bc92 --port 8410 \
+      --placements "vram=100%;vram=50%,ram=50%;vram=50%,ram=0%,ssd=50%;vram=65%,ram=15%,ssd=20%;vram=100%" \
+      --out results/infernix_matrix
+
+Model, n-gram volume and drafter paths default to the INFERNIX_* values in
+configs/model.env; override with --artifact / --ngram-volume / --draft-model.
+Bench boots pass no --prefix-cache-file, so nothing is persisted or restored.
+Prefill prompts carry a unique random prefix so the prefix cache never
+absorbs the prefill being measured.
+
+Output: <out>.json (one row per placement or boot, including the raw
+GET /admin/expert-placement state) and <out>.md (markdown table), plus the
+table on stdout. Rows are written incrementally, so a partial run still
+leaves partial results.
+
+Run under the shared locks so nothing disturbs the measurements:
+  flock ~/.cache/super-quant/gpu.lock flock ~/.cache/super-quant/build.lock \
+      python3 scripts/bench_infernix.py ...
+"""
+
+import argparse
+import json
+import os
+import random
+import re
+import signal
+import subprocess
+import sys
+import time
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
+
+SQ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+WORDS = (
+    "system network kernel memory buffer thread process signal quantum index "
+    "cache latency bandwidth token vector matrix gradient cluster replica "
+    "shard journal schema cursor packet route bridge socket stream window "
+    "frame page block sector stripe mirror parity entropy policy schedule "
+    "budget ledger quota threshold envelope snapshot boundary checkpoint "
+    "consensus quorum election follower leader candidate observer probe "
+    "gauge relay beacon tower lattice grid mesh fabric weave pattern "
+    "cipher digest signature certificate authority vault gate keeper "
+    "filter funnel pipeline conveyor carriage elevator rotor stator valve "
+    "sensor actuator beacon antenna relay switch router bridge firewall "
+    "prism lens mirror filter aperture shutter iris focus zoom exposure "
+    "harmony melody rhythm chord tempo cadence resonance silence echo "
+).split()
+
+SHORT_PROMPT = "Explain the difference between TCP and UDP, briefly."
+C6_PROMPT = (
+    "Write a short technical paragraph about distributed systems topic"
+)
+
+
+def model_env():
+    """Source the super-quant configs and return the INFERNIX_* defaults."""
+    script = (
+        "set -e; cd " + SQ + "; source configs/model.env; "
+        "for v in INFERNIX_ARTIFACT INFERNIX_NGRAM_VOLUME INFERNIX_DRAFT_MODEL "
+        "INFERNIX_KV_DTYPE INFERNIX_MAX_CONTEXT INFERNIX_MAX_CONCURRENCY; do "
+        "printf '%s=%s\\n' \"$v\" \"${!v:-}\"; done"
+    )
+    out = subprocess.run(
+        ["bash", "-c", script], capture_output=True, text=True, check=True
+    ).stdout
+    env = {}
+    for line in out.splitlines():
+        if "=" in line:
+            k, v = line.split("=", 1)
+            if v:
+                env[k] = v
+    return env
+
+
+def http(method, url, body=None, timeout=15):
+    data = json.dumps(body).encode() if body is not None else None
+    headers = {"Content-Type": "application/json"} if data else {}
+    req = Request(url, data=data, method=method, headers=headers)
+    try:
+        with urlopen(req, timeout=timeout) as r:
+            raw = r.read()
+            try:
+                return r.status, json.loads(raw)
+            except Exception:
+                return r.status, raw.decode(errors="replace")
+    except HTTPError as e:
+        return e.code, e.read().decode(errors="replace")
+    except Exception as e:  # connection refused, timeout, ...
+        return None, str(e)
+
+
+def num(s):
+    s = str(s).strip()
+    if s.endswith(("k", "K")):
+        return float(s[:-1]) * 1000.0
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def vram_mib(pid):
+    out = subprocess.run(
+        ["nvidia-smi", "--query-compute-apps=pid,used_memory",
+         "--format=csv,noheader"],
+        capture_output=True, text=True,
+    ).stdout
+    for line in out.strip().splitlines():
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) >= 2 and parts[0] == str(pid):
+            m = re.match(r"([\d.]+)", parts[1])
+            if m:
+                return float(m.group(1))
+    return None
+
+
+def rss_mib(pid):
+    try:
+        with open("/proc/{0}/status".format(pid)) as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1]) / 1024.0
+    except OSError:
+        pass
+    return None
+
+
+class Server:
+    def __init__(self, binary, flags, host, port, logpath):
+        self.logfile = open(logpath, "wb")
+        self.proc = subprocess.Popen(
+            [binary] + flags,
+            stdout=self.logfile,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        self.pid = self.proc.pid
+        self.host, self.port = host, port
+        self.base = "http://{0}:{1}".format(host, port)
+        self.logpath = logpath
+
+    def alive(self):
+        return self.proc.poll() is None
+
+    def tail(self, n=30):
+        try:
+            with open(self.logpath, errors="replace") as f:
+                return "".join(f.readlines()[-n:])
+        except OSError:
+            return ""
+
+    def wait_ready(self, deadline=300):
+        t0 = time.time()
+        while time.time() - t0 < deadline:
+            if not self.alive():
+                raise RuntimeError(
+                    "server exited during startup:\n" + self.tail()
+                )
+            st, _ = http("GET", self.base + "/v1/models", timeout=2)
+            if st == 200:
+                return time.time() - t0
+            time.sleep(0.5)
+        raise TimeoutError("server not ready in {0}s:\n{1}".format(
+            deadline, self.tail()))
+
+    def model_id(self):
+        st, resp = http("GET", self.base + "/v1/models", timeout=10)
+        if st == 200 and isinstance(resp, dict):
+            return resp["data"][0]["id"]
+        raise RuntimeError("cannot read model id: {0} {1}".format(st, resp))
+
+    def stop(self):
+        if self.alive():
+            try:
+                os.kill(self.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            try:
+                self.proc.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.kill(self.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                self.proc.wait()
+        try:
+            self.logfile.close()
+        except OSError:
+            pass
+
+
+class LogParser:
+    """Incremental parser for the server's request log."""
+
+    DONE = re.compile(r"req#(\d+) done")
+    STARTED = re.compile(r"req#(\d+) started")
+    TS = re.compile(r"^(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d+)")
+
+    def __init__(self, path):
+        self.path = path
+        self.off = 0
+        self.reqs = {}
+        self.started = {}
+        self.max_id = 0
+
+    def poll(self):
+        with open(self.path, errors="replace") as f:
+            f.seek(self.off)
+            data = f.read()
+            self.off = f.tell()
+        for line in data.splitlines():
+            m = self.TS.match(line)
+            ts = None
+            if m:
+                try:
+                    ts = datetime.strptime(
+                        m.group(1), "%Y-%m-%d %H:%M:%S.%f")
+                except ValueError:
+                    ts = None
+            md = self.DONE.search(line)
+            if md:
+                rid = int(md.group(1))
+                self.max_id = max(self.max_id, rid)
+                d = {"ts": ts, "line": line}
+                pats = [
+                    ("prompt", r"prompt (\d+)"),
+                    ("output", r"output (\d+)"),
+                    ("prefill_tps", r"prefill ([\d.]+[kK]?) tok/s"),
+                    ("decode_tps", r"decode ([\d.]+[kK]?) tok/s"),
+                    ("acc_a", r"dflash2 accepted (\d+)/"),
+                    ("acc_b", r"dflash2 accepted \d+/(\d+)"),
+                ]
+                for key, pat in pats:
+                    mm = re.search(pat, line)
+                    if mm:
+                        d[key] = num(mm.group(1))
+                self.reqs[rid] = d
+                continue
+            ms = self.STARTED.search(line)
+            if ms:
+                rid = int(ms.group(1))
+                self.max_id = max(self.max_id, rid)
+                self.started.setdefault(rid, ts)
+
+    def wait_done(self, ids, timeout=60):
+        t0 = time.time()
+        while time.time() - t0 < timeout:
+            self.poll()
+            if all(i in self.reqs for i in ids):
+                return True
+            time.sleep(0.2)
+        return False
+
+
+def filler(approx_tokens, seed):
+    rnd = random.Random(seed)
+    n = int(approx_tokens)
+    return " ".join(rnd.choice(WORDS) for _ in range(n))
+
+
+def chat(base, model, content, max_tokens, timeout=240):
+    body = {
+        "model": model,
+        "messages": [{"role": "user", "content": content}],
+        "max_tokens": max_tokens,
+        "temperature": 0,
+        "chat_template_kwargs": {"enable_thinking": False},
+    }
+    return http("POST", base + "/v1/chat/completions", body, timeout)
+
+
+def run_workload(base, model, parser, tag, ctx30k_prompt):
+    """Run the four phases once; returns req ids per phase."""
+    ids = {}
+
+    b = parser.max_id
+    chat(base, model, SHORT_PROMPT, 256)
+    parser.wait_done(list(range(b + 1, parser.max_id + 1)))
+    ids["short_c1"] = list(range(b + 1, parser.max_id + 1))
+
+    b = parser.max_id
+    chat(base, model, ctx30k_prompt, 256)
+    parser.wait_done(list(range(b + 1, parser.max_id + 1)))
+    ids["ctx30k_c1"] = list(range(b + 1, parser.max_id + 1))
+
+    b = parser.max_id
+    prompt = "[bench-{0}-prefill-{1}] ".format(tag, uuid.uuid4().hex[:8]) \
+        + filler(29000, 11)
+    chat(base, model, prompt, 4)
+    parser.wait_done(list(range(b + 1, parser.max_id + 1)))
+    ids["prefill30k"] = list(range(b + 1, parser.max_id + 1))
+
+    b = parser.max_id
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        futs = [
+            ex.submit(
+                chat, base, model,
+                "[bench-{0}-c6-{1}-{2}] {3} {1}.".format(
+                    tag, i, uuid.uuid4().hex[:8], C6_PROMPT),
+                256,
+            )
+            for i in range(6)
+        ]
+        for f in futs:
+            f.result()
+    parser.wait_done(list(range(b + 1, parser.max_id + 1)))
+    ids["c6"] = list(range(b + 1, parser.max_id + 1))
+    return ids
+
+
+def phase_metric(parser, ids, key):
+    vals = [parser.reqs[i][key] for i in ids
+            if i in parser.reqs and key in parser.reqs[i]
+            and parser.reqs[i][key] is not None]
+    return sum(vals) / len(vals) if vals else None
+
+
+def c6_aggregate(parser, ids):
+    dones = [parser.reqs[i] for i in ids if i in parser.reqs]
+    starts = [parser.started[i] for i in ids if i in parser.started]
+    if not dones or not starts:
+        return None
+    t_end = max(d["ts"] for d in dones if d["ts"])
+    t_beg = min(t for t in starts if t)
+    toks = sum(int(d.get("output") or 0) for d in dones)
+    dt = (t_end - t_beg).total_seconds()
+    return round(toks / dt, 1) if dt > 0 else None
+
+
+def acceptance_pct(parser, ids):
+    a = sum(int(parser.reqs[i]["acc_a"]) for i in ids
+           if i in parser.reqs and "acc_a" in parser.reqs[i])
+    b = sum(int(parser.reqs[i]["acc_b"]) for i in ids
+           if i in parser.reqs and "acc_b" in parser.reqs[i])
+    return round(100.0 * a / b, 1) if b else None
+
+
+def spec_to_body(spec):
+    body = {}
+    for part in spec.split(","):
+        k, _, v = part.partition("=")
+        body[k.strip()] = v.strip()
+    return body
+
+
+def post_placement(base, spec):
+    body = spec_to_body(spec)
+    attempts = [body]
+    trimmed = {k: v for k, v in body.items() if v not in ("0%", "0")}
+    if trimmed != body:
+        attempts.append(trimmed)
+    if body.get("vram") in ("100%", "all"):
+        attempts.append({"vram": "all"})
+    last = (None, None, None)
+    for a in attempts:
+        st, resp = http("POST", base + "/admin/expert-placement",
+                        a, timeout=60)
+        if st == 200:
+            return st, resp, a
+        last = (st, resp, a)
+    return last
+
+
+def wait_move_done(base, timeout=30):
+    """Poll GET until switching is false and any background fill finished.
+
+    Real switches clear in ~1-3 s. A placement whose switching flag never
+    clears (observed for no-op re-applies and demotions from the resident
+    default) is given up after `timeout` so the run keeps the GPU busy; the
+    row still records the raw GET state.
+    """
+    t0 = time.time()
+    g = None
+    while time.time() - t0 < timeout:
+        st, g = http("GET", base + "/admin/expert-placement", timeout=5)
+        if isinstance(g, dict):
+            switching = g.get("switching")
+            if switching is False or switching is None:
+                ft, fs = g.get("fill_total"), g.get("fill_seeded")
+                if ft in (None, 0) or (
+                        ft is not None and fs is not None and fs >= ft):
+                    return g, time.time() - t0
+        time.sleep(0.5)
+    return g, time.time() - t0
+
+
+def find_host_expert_bytes(g):
+    """Best-effort: the host/RAM expert bytes from a GET body.
+
+    Prefers the mechanism block (ram experts x record bytes); the generic
+    walk is a fallback and skips per-record fields like record_bytes.
+    """
+    if not isinstance(g, dict):
+        return None, None
+    mech = g.get("mechanism")
+    if isinstance(mech, dict) and isinstance(mech.get("ram"), dict):
+        ram = mech["ram"]
+        n, rec = ram.get("experts"), ram.get("record_bytes")
+        if isinstance(n, (int, float)) and isinstance(rec, (int, float)):
+            return "mechanism.ram.experts*record_bytes", int(n * rec)
+    hits = []
+
+    def walk(node, path):
+        if isinstance(node, dict):
+            for k, v in node.items():
+                here = ".".join(path + [k])
+                # (?<!v)ram: match ram/host on the path but not "vram"
+                if re.search(r"(?<!v)ram|host", here) \
+                        and re.search(r"byte", k) and k != "record_bytes" \
+                        and isinstance(v, (int, float)):
+                    hits.append((here, v))
+                walk(v, path + [k])
+        elif isinstance(node, list):
+            for i, v in enumerate(node):
+                walk(v, path + [str(i)])
+
+    walk(g, [])
+    if hits:
+        return hits[0]
+    return None, None
+
+
+def fmt_bytes(v):
+    if v is None:
+        return "n/a"
+    if v > 2 ** 30:
+        return "{0:.1f}GiB".format(v / 2 ** 30)
+    if v > 2 ** 20:
+        return "{0:.0f}MiB".format(v / 2 ** 20)
+    if v > 2 ** 10:
+        return "{0:.1f}KiB".format(v / 2 ** 10)
+    return str(int(v))
+
+
+def fmt(v, nd=1):
+    if v is None:
+        return "n/a"
+    if isinstance(v, float):
+        return "{0:.{1}f}".format(v, nd)
+    return str(v)
+
+
+def write_outputs(out, rows, mode):
+    with open(out + ".json", "w") as f:
+        json.dump({"mode": mode, "rows": rows}, f, indent=1)
+    lines = []
+    if mode == "startup":
+        lines += ["| boot | ready_s | engine_s | warm_fill | spill_warn |"
+                  " residents | vram_MiB |",
+                  "|---|---|---|---|---|---|---|"]
+        for r in rows:
+            lines.append(
+                "| {0} | {1} | {2} | {3}/{4} | {5} | {6} | {7} |".format(
+                    r["boot"], fmt(r["ready_s"]), fmt(r.get("engine_s")),
+                    r.get("warm_loaded"), r.get("warm_total"),
+                    r.get("spill_warnings"), r.get("residents"),
+                    fmt(r.get("vram_mib"), 0)))
+    else:
+        lines += ["| placement | switch_s | vram_MiB | rss_MiB |"
+                  " host_experts | short_C1 | ctx30k_C1 | prefill30k |"
+                  " C6_agg | accept_% |",
+                  "|---|---|---|---|---|---|---|---|---|---|"]
+        for r in rows:
+            path, hb = r.get("host_expert_path"), r.get("host_expert_bytes")
+            host = fmt_bytes(hb) if hb is not None else "n/a"
+            if r.get("ram_experts") is not None:
+                host = "{0} experts {1}".format(r["ram_experts"], host)
+            lines.append(
+                "| {0} | {1} | {2} | {3} | {4} | {5} | {6} | {7} | {8}"
+                " | {9} |".format(
+                    r["placement"], fmt(r.get("switch_s")),
+                    fmt(r.get("vram_mib"), 0), fmt(r.get("rss_mib"), 0),
+                    host, fmt(r.get("short_c1_tps"), 0),
+                    fmt(r.get("ctx30k_c1_tps"), 0),
+                    fmt(r.get("prefill30k_tps"), 0),
+                    fmt(r.get("c6_agg_tps"), 0), fmt(r.get("accept_pct"))))
+    table = "\n".join(lines)
+    with open(out + ".md", "w") as f:
+        f.write(table + "\n")
+    print(table)
+
+
+def server_flags(args, env, experts_spec):
+    return [
+        args.artifact or env["INFERNIX_ARTIFACT"],
+        "--ngram-volume", args.ngram_volume or env["INFERNIX_NGRAM_VOLUME"],
+        "--kv-dtype", args.kv_dtype or env.get("INFERNIX_KV_DTYPE", "fp8"),
+        "--max-context",
+        str(args.max_context or env.get("INFERNIX_MAX_CONTEXT", 262144)),
+        "--max-concurrency",
+        str(args.max_concurrency or env.get("INFERNIX_MAX_CONCURRENCY", 6)),
+        "--spec", "dflash2",
+        "--draft-model",
+        args.draft_model or env["INFERNIX_DRAFT_MODEL"],
+        "--draft-tokens", "auto", "--lm-head-draft",
+        "--tolerant-tool-calls",
+        "--ram-headroom-mib", str(args.ram_headroom_mib),
+        "--host", args.host, "--port", str(args.port),
+    ] + (["--experts", experts_spec] if experts_spec else [])
+
+
+CURRENT = {"server": None}
+
+
+def cleanup(*_):
+    if CURRENT["server"] is not None:
+        CURRENT["server"].stop()
+        CURRENT["server"] = None
+    sys.exit(130)
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[1])
+    ap.add_argument("--binary", required=True)
+    ap.add_argument("--host", default="127.0.0.1")
+    ap.add_argument("--port", type=int, default=8410)
+    ap.add_argument("--placements",
+                    default="vram=100%;vram=50%,ram=50%;"
+                            "vram=50%,ram=0%,ssd=50%;"
+                            "vram=65%,ram=15%,ssd=20%;vram=100%")
+    ap.add_argument("--startup-only", type=int, default=0)
+    ap.add_argument("--experts", default=None,
+                    help="boot placement spec (default: first placement,"
+                         " or vram=all for --startup-only)")
+    ap.add_argument("--out", default=None)
+    ap.add_argument("--kv-dtype", default=None)
+    ap.add_argument("--max-context", type=int, default=None)
+    ap.add_argument("--max-concurrency", type=int, default=None)
+    ap.add_argument("--ram-headroom-mib", type=int, default=16384)
+    ap.add_argument("--artifact", default=None)
+    ap.add_argument("--ngram-volume", default=None)
+    ap.add_argument("--draft-model", default=None)
+    args = ap.parse_args()
+
+    signal.signal(signal.SIGTERM, cleanup)
+    signal.signal(signal.SIGINT, cleanup)
+    env = model_env()
+    os.makedirs(os.path.join(SQ, "results"), exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    if args.startup_only:
+        out = args.out or os.path.join(
+            SQ, "results", "infernix_startup_" + stamp)
+        return run_startup(args, env, out)
+    out = args.out or os.path.join(SQ, "results", "infernix_matrix_" + stamp)
+    return run_matrix(args, env, out)
+
+
+def run_startup(args, env, out):
+    rows = []
+    try:
+        for i in range(args.startup_only):
+            logpath = "{0}.boot{1}.log".format(out, i)
+            srv = Server(args.binary, server_flags(args, env, "vram=all"),
+                         args.host, args.port, logpath)
+            CURRENT["server"] = srv
+            ready = srv.wait_ready()
+            st, g = http("GET", srv.base + "/admin/expert-placement",
+                         timeout=10)
+            with open(logpath, errors="replace") as f:
+                text = f.read()
+            m = re.search(r"resident warm fill loaded (\d+) of (\d+)", text)
+            me = re.search(r"engine ready \|.*?total ([\d.]+)s", text)
+            spill = len(re.findall(
+                r"placed in system memory and given back", text))
+            row = {
+                "boot": i,
+                "ready_s": round(ready, 1),
+                "engine_s": float(me.group(1)) if me else None,
+                "warm_loaded": int(m.group(1)) if m else None,
+                "warm_total": int(m.group(2)) if m else None,
+                "spill_warnings": spill,
+                "residents": g.get("residents") if isinstance(g, dict)
+                else None,
+                "vram_mib": vram_mib(srv.pid),
+                "get": g if isinstance(g, dict) else str(g),
+            }
+            rows.append(row)
+            print(json.dumps(row))
+            srv.stop()          # next boot starts in the reclaim window
+            CURRENT["server"] = None
+    finally:
+        if CURRENT["server"] is not None:
+            CURRENT["server"].stop()
+            CURRENT["server"] = None
+    # One expert of the 24576 is never routed (every healthy boot loads
+    # 24575); the spill bug showed up as a small fraction of that. Pass =
+    # every boot filled >= 95% with zero spill warnings.
+    ok = rows and all(
+        r["warm_loaded"] is not None
+        and r["warm_total"]
+        and r["warm_loaded"] >= 0.95 * r["warm_total"]
+        and r["spill_warnings"] == 0
+        for r in rows)
+    print("STARTUP_PROOF:", "PASS" if ok else "FAIL")
+    write_outputs(out, rows, "startup")
+    return 0 if ok else 1
+
+
+def run_matrix(args, env, out):
+    placements = [p.strip() for p in args.placements.split(";") if p.strip()]
+    boot_spec = args.experts or placements[0]
+    if boot_spec == "vram=100%":
+        boot_spec = "vram=all"
+    logpath = out + ".server.log"
+    rows = []
+    try:
+        srv = Server(args.binary, server_flags(args, env, boot_spec),
+                     args.host, args.port, logpath)
+        CURRENT["server"] = srv
+        ready = srv.wait_ready()
+        model = srv.model_id()
+        parser = LogParser(logpath)
+        print("boot ready in {0:.1f}s, model {1}".format(ready, model))
+        st, g0 = http("GET", srv.base + "/admin/expert-placement",
+                      timeout=10)
+        print("GET /admin/expert-placement:",
+              json.dumps(g0)[:2000] if isinstance(g0, dict) else g0)
+        ctx30k_prompt = "[bench-ctx30k-{0}] ".format(uuid.uuid4().hex[:8]) \
+            + filler(29000, 4242)
+
+        for spec in placements:
+            row = {"placement": spec,
+                   "vram_before": vram_mib(srv.pid),
+                   "rss_before": rss_mib(srv.pid)}
+            st, resp, body = post_placement(srv.base, spec)
+            row["post_status"] = st
+            row["post_body"] = body
+            g, sw_s = wait_move_done(srv.base)
+            row["switch_s"] = round(sw_s, 1)
+            row["get"] = g if isinstance(g, dict) else str(g)
+            path, hb = find_host_expert_bytes(g)
+            row["host_expert_path"] = path
+            row["host_expert_bytes"] = hb
+            mech = g.get("mechanism") if isinstance(g, dict) else None
+            row["ram_experts"] = (
+                mech.get("ram", {}).get("experts")
+                if isinstance(mech, dict) else None)
+            row["vram_mib"] = vram_mib(srv.pid)
+            row["rss_mib"] = rss_mib(srv.pid)
+            if st != 200:
+                row["post_resp"] = str(resp)[:400]
+
+            run_workload(srv.base, model, parser, "warm", ctx30k_prompt)
+            ids = run_workload(srv.base, model, parser, "meas",
+                              ctx30k_prompt)
+            row["short_c1_tps"] = phase_metric(
+                parser, ids["short_c1"], "decode_tps")
+            row["ctx30k_c1_tps"] = phase_metric(
+                parser, ids["ctx30k_c1"], "decode_tps")
+            row["ctx30k_prompt_toks"] = next(
+                (parser.reqs[i].get("prompt") for i in ids["ctx30k_c1"]
+                 if i in parser.reqs), None)
+            row["prefill30k_tps"] = phase_metric(
+                parser, ids["prefill30k"], "prefill_tps")
+            row["prefill30k_toks"] = next(
+                (parser.reqs[i].get("prompt") for i in ids["prefill30k"]
+                 if i in parser.reqs), None)
+            row["c6_agg_tps"] = c6_aggregate(parser, ids["c6"])
+            all_ids = [i for k in ids for i in ids[k]]
+            row["accept_pct"] = acceptance_pct(parser, all_ids)
+            for k in ("short_c1_tps", "ctx30k_c1_tps", "prefill30k_tps",
+                      "c6_agg_tps"):
+                if row[k] is not None:
+                    row[k] = round(row[k], 1)
+            rows.append(row)
+            print(json.dumps(row)[:800])
+            write_outputs(out, rows, "matrix")   # incremental
+    finally:
+        if CURRENT["server"] is not None:
+            CURRENT["server"].stop()
+            CURRENT["server"] = None
+    write_outputs(out, rows, "matrix")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
