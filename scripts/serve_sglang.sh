@@ -100,6 +100,7 @@ ARGS=(
 [[ -n "${SGLANG_TP_SIZE:-}" && "${SGLANG_TP_SIZE:-1}" != "1" ]] && ARGS+=(--tp-size "$SGLANG_TP_SIZE")
 [[ -n "${SGLANG_KV_CACHE_DTYPE:-}" ]] && ARGS+=(--kv-cache-dtype "$SGLANG_KV_CACHE_DTYPE")
 [[ -n "${SGLANG_FP8_GEMM_BACKEND:-}" ]] && ARGS+=(--fp8-gemm-backend "$SGLANG_FP8_GEMM_BACKEND")
+[[ -n "${SGLANG_MOE_RUNNER_BACKEND:-}" ]] && ARGS+=(--moe-runner-backend "$SGLANG_MOE_RUNNER_BACKEND")
 # Expert-axis sharding for checkpoints whose per-rank MoE intermediate fails
 # the cutlass nvfp4 alignment check under pure TP (moe_intermediate/tp % 32).
 [[ -n "${SGLANG_EP_SIZE:-}" ]] && ARGS+=(--ep-size "$SGLANG_EP_SIZE")
