@@ -140,6 +140,27 @@ def vram_mib(pid):
     return None
 
 
+def breakdown(g, proc_vram_mib):
+    """Per-tier counts and the process VRAM split from GET /admin/expert-placement."""
+    m = g.get("mechanism", {})
+    gib = float(1 << 30)
+    experts = m.get("vram", {}).get("bytes")
+    kv = m.get("kv", {}).get("bytes")
+    out = {
+        "tiers": "{0}/{1}/{2}".format(m.get("vram", {}).get("experts"),
+                                      m.get("ram", {}).get("experts"),
+                                      m.get("ssd", {}).get("experts")),
+        "ram_shadows": m.get("ram", {}).get("shadows"),
+        "proc_vram_gib": proc_vram_mib / 1024.0 if proc_vram_mib else None,
+        "expert_vram_gib": experts / gib if experts is not None else None,
+        "kv_vram_gib": kv / gib if kv is not None else None,
+        "last_switch": g.get("last_switch"),
+    }
+    if out["proc_vram_gib"] is not None and experts is not None and kv is not None:
+        out["other_vram_gib"] = out["proc_vram_gib"] - out["expert_vram_gib"] - out["kv_vram_gib"]
+    return out
+
+
 def rss_mib(pid):
     try:
         with open("/proc/{0}/status".format(pid)) as f:
@@ -335,6 +356,59 @@ def run_workload(base, model, parser, tag, ctx30k_prompt):
     return ids
 
 
+CHAT_PROMPTS = [
+    "Explain how photosynthesis works to a curious teenager.",
+    "What are good habits for sleeping better? Give practical advice.",
+    "Summarize the causes of the French Revolution in plain language.",
+    "Describe a relaxing weekend trip to the mountains.",
+    "Why is the sky blue? Explain simply.",
+    "Give advice for a first job interview.",
+    "Tell a short story about a lighthouse keeper.",
+    "What is the difference between weather and climate?",
+]
+CODE_PROMPTS = [
+    "Write a Python function that parses an ISO 8601 date string without libraries.",
+    "Implement a thread-safe LRU cache in C++ with a mutex and a std::list.",
+    "Write a Rust function that merges two sorted vectors in place.",
+    "Write a SQL query for the top 3 salaries per department with window functions.",
+    "Implement binary search over a rotated sorted array in Go.",
+    "Write a bash script that retries a command with exponential backoff.",
+    "Implement a trie in TypeScript with insert, search and startsWith.",
+    "Write a CUDA kernel that computes a prefix sum over 1024 floats per block.",
+]
+
+
+def swap_counters(base):
+    st, g = http("GET", base + "/admin/expert-placement", timeout=10)
+    sw = g.get("mechanism", {}).get("swaps", {}) if isinstance(g, dict) else {}
+    return sw.get("routed", 0), sw.get("hits", 0), sw.get("promotions", 0)
+
+
+def run_shift(base, model, spec, n):
+    """Chat then code at one placement; VRAM hit rate per request from the swap counters."""
+    st, resp, body = post_placement(base, spec)
+    g, sw_s = wait_move_done(base)
+    rows = []
+    for phase, prompts in (("chat", CHAT_PROMPTS), ("code", CODE_PROMPTS)):
+        for i in range(n):
+            r0, h0, p0 = swap_counters(base)
+            chat(base, model, prompts[i % len(prompts)], 256)
+            r1, h1, p1 = swap_counters(base)
+            routed = r1 - r0
+            rows.append({"phase": phase, "i": i,
+                         "hit_pct": 100.0 * (h1 - h0) / routed if routed else None,
+                         "promotions": p1 - p0})
+    return {"placement": spec, "switch_s": round(sw_s, 1), "rows": rows}
+
+
+def print_shift(shift):
+    print("swap shift at {0}:".format(shift["placement"]))
+    print("| phase | request | VRAM hit % | promotions |")
+    print("|---|---|---|---|")
+    for r in shift["rows"]:
+        print("| {0} | {1} | {2} | {3} |".format(r["phase"], r["i"], fmt(r["hit_pct"]), r["promotions"]))
+
+
 def phase_metric(parser, ids, key):
     vals = [parser.reqs[i][key] for i in ids
             if i in parser.reqs and key in parser.reqs[i]
@@ -483,21 +557,26 @@ def write_outputs(out, rows, mode):
                     r.get("spill_warnings"), r.get("residents"),
                     fmt(r.get("vram_mib"), 0)))
     else:
-        lines += ["| placement | switch_s | vram_MiB | rss_MiB |"
-                  " host_experts | short_C1 | ctx30k_C1 | prefill30k |"
-                  " C6_agg | accept_% |",
-                  "|---|---|---|---|---|---|---|---|---|---|"]
+        lines += ["| placement | VRAM/RAM/SSD experts | switch_s | proc VRAM GiB |"
+                  " experts / KV / other GiB | RSS GiB | short_C1 | ctx30k_C1 |"
+                  " prefill30k | C6_agg | accept_% |",
+                  "|---|---|---|---|---|---|---|---|---|---|---|"]
         for r in rows:
             path, hb = r.get("host_expert_path"), r.get("host_expert_bytes")
             host = fmt_bytes(hb) if hb is not None else "n/a"
             if r.get("ram_experts") is not None:
                 host = "{0} experts {1}".format(r["ram_experts"], host)
+            split = "{0} / {1} / {2}".format(
+                fmt(r.get("expert_vram_gib")), fmt(r.get("kv_vram_gib")),
+                fmt(r.get("other_vram_gib")))
+            rss = r.get("rss_mib")
             lines.append(
                 "| {0} | {1} | {2} | {3} | {4} | {5} | {6} | {7} | {8}"
-                " | {9} |".format(
-                    r["placement"], fmt(r.get("switch_s")),
-                    fmt(r.get("vram_mib"), 0), fmt(r.get("rss_mib"), 0),
-                    host, fmt(r.get("short_c1_tps"), 0),
+                " | {9} | {10} |".format(
+                    r["placement"], r.get("tiers", "n/a"), fmt(r.get("switch_s")),
+                    fmt(r.get("proc_vram_gib")), split,
+                    fmt(rss / 1024.0 if rss else None),
+                    fmt(r.get("short_c1_tps"), 0),
                     fmt(r.get("ctx30k_c1_tps"), 0),
                     fmt(r.get("prefill30k_tps"), 0),
                     fmt(r.get("c6_agg_tps"), 0), fmt(r.get("accept_pct"))))
@@ -546,6 +625,11 @@ def main():
                             "vram=50%,ram=0%,ssd=50%;"
                             "vram=65%,ram=15%,ssd=20%;vram=100%")
     ap.add_argument("--startup-only", type=int, default=0)
+    ap.add_argument("--shift", default=None,
+                    help="after the matrix: switch to this placement, then run chat "
+                         "prompts followed by code prompts and report the VRAM hit "
+                         "rate per request (the swapper should raise it after the shift)")
+    ap.add_argument("--shift-requests", type=int, default=8)
     ap.add_argument("--experts", default=None,
                     help="boot placement spec (default: first placement,"
                          " or vram=all for --startup-only)")
@@ -685,6 +769,11 @@ def run_matrix(args, env, out):
             row["c6_agg_tps"] = c6_aggregate(parser, ids["c6"])
             all_ids = [i for k in ids for i in ids[k]]
             row["accept_pct"] = acceptance_pct(parser, all_ids)
+            # Counts and the VRAM breakdown after the fills settled.
+            st2, g2 = http("GET", srv.base + "/admin/expert-placement", timeout=10)
+            if isinstance(g2, dict):
+                row["get_after"] = g2
+                row.update(breakdown(g2, vram_mib(srv.pid)))
             for k in ("short_c1_tps", "ctx30k_c1_tps", "prefill30k_tps",
                       "c6_agg_tps"):
                 if row[k] is not None:
@@ -692,6 +781,11 @@ def run_matrix(args, env, out):
             rows.append(row)
             print(json.dumps(row)[:800])
             write_outputs(out, rows, "matrix")   # incremental
+        if args.shift:
+            shift = run_shift(srv.base, model, args.shift, args.shift_requests)
+            with open(out + ".shift.json", "w") as f:
+                json.dump(shift, f, indent=1)
+            print_shift(shift)
     finally:
         if CURRENT["server"] is not None:
             CURRENT["server"].stop()
