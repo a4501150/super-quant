@@ -1,0 +1,235 @@
+{
+ "mode": "startup",
+ "rows": [
+  {
+   "boot": 0,
+   "ready_s": 11.9,
+   "engine_s": 11.0,
+   "warm_loaded": 24575,
+   "warm_total": 24576,
+   "spill_warnings": 0,
+   "residents": 24575,
+   "vram_mib": 92102.0,
+   "get": {
+    "fill_seeded": 0,
+    "fill_total": 0,
+    "frame_limit": 24575,
+    "frames": 24575,
+    "mechanism": {
+     "host_available": 71719301120,
+     "host_total": 96262238208,
+     "landing_slots": 0,
+     "ram": {
+      "experts": 1,
+      "record_bytes": 2764800,
+      "slots": 1536
+     },
+     "ssd": {
+      "experts": 0
+     },
+     "total_experts": 24576,
+     "vram": {
+      "bytes": 67981279232,
+      "experts": 24575,
+      "frame_bytes": 2764800,
+      "pinned": 0
+     },
+     "vram_free": 4534173696,
+     "vram_total": 101971001344
+    },
+    "pinned": 0,
+    "resident": true,
+    "residents": 24575,
+    "supported": true,
+    "switching": false,
+    "target": 0,
+    "tier_residents": 1,
+    "tier_slots": 1536
+   }
+  },
+  {
+   "boot": 1,
+   "ready_s": 11.5,
+   "engine_s": 10.6,
+   "warm_loaded": 24575,
+   "warm_total": 24576,
+   "spill_warnings": 0,
+   "residents": 24575,
+   "vram_mib": 92102.0,
+   "get": {
+    "fill_seeded": 0,
+    "fill_total": 0,
+    "frame_limit": 24575,
+    "frames": 24575,
+    "mechanism": {
+     "host_available": 71681851392,
+     "host_total": 96262238208,
+     "landing_slots": 0,
+     "ram": {
+      "experts": 1,
+      "record_bytes": 2764800,
+      "slots": 1536
+     },
+     "ssd": {
+      "experts": 0
+     },
+     "total_experts": 24576,
+     "vram": {
+      "bytes": 67981279232,
+      "experts": 24575,
+      "frame_bytes": 2764800,
+      "pinned": 0
+     },
+     "vram_free": 4553900032,
+     "vram_total": 101971001344
+    },
+    "pinned": 0,
+    "resident": true,
+    "residents": 24575,
+    "supported": true,
+    "switching": false,
+    "target": 0,
+    "tier_residents": 1,
+    "tier_slots": 1536
+   }
+  },
+  {
+   "boot": 2,
+   "ready_s": 11.5,
+   "engine_s": 10.6,
+   "warm_loaded": 24575,
+   "warm_total": 24576,
+   "spill_warnings": 0,
+   "residents": 24575,
+   "vram_mib": 92102.0,
+   "get": {
+    "fill_seeded": 0,
+    "fill_total": 0,
+    "frame_limit": 24575,
+    "frames": 24575,
+    "mechanism": {
+     "host_available": 71621435392,
+     "host_total": 96262238208,
+     "landing_slots": 0,
+     "ram": {
+      "experts": 1,
+      "record_bytes": 2764800,
+      "slots": 1536
+     },
+     "ssd": {
+      "experts": 0
+     },
+     "total_experts": 24576,
+     "vram": {
+      "bytes": 67981279232,
+      "experts": 24575,
+      "frame_bytes": 2764800,
+      "pinned": 0
+     },
+     "vram_free": 4510908416,
+     "vram_total": 101971001344
+    },
+    "pinned": 0,
+    "resident": true,
+    "residents": 24575,
+    "supported": true,
+    "switching": false,
+    "target": 0,
+    "tier_residents": 1,
+    "tier_slots": 1536
+   }
+  },
+  {
+   "boot": 3,
+   "ready_s": 11.5,
+   "engine_s": 10.5,
+   "warm_loaded": 24575,
+   "warm_total": 24576,
+   "spill_warnings": 0,
+   "residents": 24575,
+   "vram_mib": 92102.0,
+   "get": {
+    "fill_seeded": 0,
+    "fill_total": 0,
+    "frame_limit": 24575,
+    "frames": 24575,
+    "mechanism": {
+     "host_available": 71566577664,
+     "host_total": 96262238208,
+     "landing_slots": 0,
+     "ram": {
+      "experts": 1,
+      "record_bytes": 2764800,
+      "slots": 1536
+     },
+     "ssd": {
+      "experts": 0
+     },
+     "total_experts": 24576,
+     "vram": {
+      "bytes": 67981279232,
+      "experts": 24575,
+      "frame_bytes": 2764800,
+      "pinned": 0
+     },
+     "vram_free": 4558487552,
+     "vram_total": 101971001344
+    },
+    "pinned": 0,
+    "resident": true,
+    "residents": 24575,
+    "supported": true,
+    "switching": false,
+    "target": 0,
+    "tier_residents": 1,
+    "tier_slots": 1536
+   }
+  },
+  {
+   "boot": 4,
+   "ready_s": 11.5,
+   "engine_s": 10.5,
+   "warm_loaded": 24575,
+   "warm_total": 24576,
+   "spill_warnings": 0,
+   "residents": 24575,
+   "vram_mib": 92102.0,
+   "get": {
+    "fill_seeded": 0,
+    "fill_total": 0,
+    "frame_limit": 24575,
+    "frames": 24575,
+    "mechanism": {
+     "host_available": 71557910528,
+     "host_total": 96262238208,
+     "landing_slots": 0,
+     "ram": {
+      "experts": 1,
+      "record_bytes": 2764800,
+      "slots": 1536
+     },
+     "ssd": {
+      "experts": 0
+     },
+     "total_experts": 24576,
+     "vram": {
+      "bytes": 67981279232,
+      "experts": 24575,
+      "frame_bytes": 2764800,
+      "pinned": 0
+     },
+     "vram_free": 4561567744,
+     "vram_total": 101971001344
+    },
+    "pinned": 0,
+    "resident": true,
+    "residents": 24575,
+    "supported": true,
+    "switching": false,
+    "target": 0,
+    "tier_residents": 1,
+    "tier_slots": 1536
+   }
+  }
+ ]
+}
