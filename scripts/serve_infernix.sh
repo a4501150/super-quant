@@ -35,6 +35,7 @@ ARGS=(
 [[ -n "$INFERNIX_PREFIX_CACHE_FILE" ]] && ARGS+=(--prefix-cache-file "$INFERNIX_PREFIX_CACHE_FILE" --prefix-cache-save-mins "$INFERNIX_PREFIX_CACHE_SAVE_MINS")
 [[ -n "$SERVED_NAME" ]] && ARGS+=(--served-model-name "$SERVED_NAME")
 [[ -n "$INFERNIX_EXPERTS" ]] && ARGS+=(--experts "$INFERNIX_EXPERTS")
+[[ "${INFERNIX_VISION}" == "true" ]] && ARGS+=(--vision)
 # shellcheck disable=SC2206
 [[ -n "$INFERNIX_EXTRA_ARGS" ]] && ARGS+=($INFERNIX_EXTRA_ARGS)
 
