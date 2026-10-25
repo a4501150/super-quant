@@ -428,6 +428,25 @@ def c6_aggregate(parser, ids):
     return round(toks / dt, 1) if dt > 0 else None
 
 
+def disturbed(parser, warm, meas):
+    """Whether the measured pass ran on a disturbed GPU or host.
+
+    Both passes decode the same short prompt with the same drafts (greedy, so the
+    acceptance counts match), and the measured one runs 4-6 % faster than the warm
+    one on an undisturbed machine. A measured short decode below the warm one with
+    equal acceptance means something else slowed the boot during the pass (the GPU
+    also drives the desktop); its numbers are not comparable."""
+    w = [parser.reqs.get(i) for i in warm["short_c1"]]
+    m = [parser.reqs.get(i) for i in meas["short_c1"]]
+    if not w or not m or None in w or None in m:
+        return False
+    w, m = w[0], m[0]
+    if (w.get("acc_a"), w.get("acc_b")) != (m.get("acc_a"), m.get("acc_b")):
+        return False
+    wt, mt = w.get("decode_tps"), m.get("decode_tps")
+    return wt is not None and mt is not None and mt < wt
+
+
 def acceptance_pct(parser, ids):
     a = sum(int(parser.reqs[i]["acc_a"]) for i in ids
            if i in parser.reqs and "acc_a" in parser.reqs[i])
@@ -580,6 +599,10 @@ def write_outputs(out, rows, mode):
                     fmt(r.get("ctx30k_c1_tps"), 0),
                     fmt(r.get("prefill30k_tps"), 0),
                     fmt(r.get("c6_agg_tps"), 0), fmt(r.get("accept_pct"))))
+            if r.get("disturbed"):
+                lines[-1] += " DISTURBED (every measured pass)"
+            elif r.get("disturbed_passes"):
+                lines[-1] += " (re-measured {0}x)".format(r["disturbed_passes"])
     table = "\n".join(lines)
     with open(out + ".md", "w") as f:
         f.write(table + "\n")
@@ -641,6 +664,9 @@ def main():
     ap.add_argument("--artifact", default=None)
     ap.add_argument("--ngram-volume", default=None)
     ap.add_argument("--draft-model", default=None)
+    ap.add_argument("--retry-disturbed", type=int, default=2,
+                    help="repeat a measured pass that ran slower than the warm"
+                         " pass (a busy GPU or host) up to N times")
     args = ap.parse_args()
 
     signal.signal(signal.SIGTERM, cleanup)
@@ -751,9 +777,24 @@ def run_matrix(args, env, out):
             if st != 200:
                 row["post_resp"] = str(resp)[:400]
 
-            run_workload(srv.base, model, parser, "warm", ctx30k_prompt)
+            warm = run_workload(srv.base, model, parser, "warm", ctx30k_prompt)
             ids = run_workload(srv.base, model, parser, "meas",
-                              ctx30k_prompt)
+                               ctx30k_prompt)
+            row["disturbed_passes"] = 0
+            while disturbed(parser, warm, ids):
+                row["disturbed_passes"] += 1
+                print("warning: measured pass {0} ran slower than the warm pass"
+                      " (short decode {1} < {2} tok/s at equal acceptance);"
+                      " the GPU or host was busy".format(
+                          row["disturbed_passes"],
+                          parser.reqs[ids["short_c1"][0]].get("decode_tps"),
+                          parser.reqs[warm["short_c1"][0]].get("decode_tps")),
+                      file=sys.stderr)
+                if row["disturbed_passes"] > args.retry_disturbed:
+                    row["disturbed"] = True
+                    break
+                ids = run_workload(srv.base, model, parser, "meas",
+                                   ctx30k_prompt)
             row["short_c1_tps"] = phase_metric(
                 parser, ids["short_c1"], "decode_tps")
             row["ctx30k_c1_tps"] = phase_metric(
