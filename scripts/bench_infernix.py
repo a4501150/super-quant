@@ -600,9 +600,7 @@ def write_outputs(out, rows, mode):
                     fmt(r.get("prefill30k_tps"), 0),
                     fmt(r.get("c6_agg_tps"), 0), fmt(r.get("accept_pct"))))
             if r.get("disturbed"):
-                lines[-1] += " DISTURBED (every measured pass)"
-            elif r.get("disturbed_passes"):
-                lines[-1] += " (re-measured {0}x)".format(r["disturbed_passes"])
+                lines[-1] += " DISTURBED"
     table = "\n".join(lines)
     with open(out + ".md", "w") as f:
         f.write(table + "\n")
@@ -664,9 +662,6 @@ def main():
     ap.add_argument("--artifact", default=None)
     ap.add_argument("--ngram-volume", default=None)
     ap.add_argument("--draft-model", default=None)
-    ap.add_argument("--retry-disturbed", type=int, default=2,
-                    help="repeat a measured pass that ran slower than the warm"
-                         " pass (a busy GPU or host) up to N times")
     args = ap.parse_args()
 
     signal.signal(signal.SIGTERM, cleanup)
@@ -780,21 +775,14 @@ def run_matrix(args, env, out):
             warm = run_workload(srv.base, model, parser, "warm", ctx30k_prompt)
             ids = run_workload(srv.base, model, parser, "meas",
                                ctx30k_prompt)
-            row["disturbed_passes"] = 0
-            while disturbed(parser, warm, ids):
-                row["disturbed_passes"] += 1
-                print("warning: measured pass {0} ran slower than the warm pass"
-                      " (short decode {1} < {2} tok/s at equal acceptance);"
-                      " the GPU or host was busy".format(
-                          row["disturbed_passes"],
+            row["disturbed"] = disturbed(parser, warm, ids)
+            if row["disturbed"]:
+                print("warning: the measured pass ran slower than the warm pass"
+                      " (short decode {0} < {1} tok/s at equal acceptance);"
+                      " the GPU or host was busy, so this row is not comparable".format(
                           parser.reqs[ids["short_c1"][0]].get("decode_tps"),
                           parser.reqs[warm["short_c1"][0]].get("decode_tps")),
                       file=sys.stderr)
-                if row["disturbed_passes"] > args.retry_disturbed:
-                    row["disturbed"] = True
-                    break
-                ids = run_workload(srv.base, model, parser, "meas",
-                                   ctx30k_prompt)
             row["short_c1_tps"] = phase_metric(
                 parser, ids["short_c1"], "decode_tps")
             row["ctx30k_c1_tps"] = phase_metric(
