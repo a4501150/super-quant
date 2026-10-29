@@ -1,0 +1,433 @@
+[
+ {
+  "config": "ram",
+  "flags": [],
+  "requests": [
+   {
+    "line": "2026-10-29 06:35:58.837  INFO  req#1 done | openai-chat | output limit | prompt 20,835 | output 64 | cache 0 (0.0%) | TTFT 1.7s | total 1.9s | prefill 12.2k tok/s | decode 294.0 tok/s | dflash2 accepted 40/62 (64.5%) | expert cache 100.0% hit, decode 100.0%",
+    "prompt": 20835,
+    "cached": 0,
+    "from_disk": false,
+    "ttft_s": 1.7,
+    "decode_tps": 294.0,
+    "session": 0,
+    "phase": "cold"
+   },
+   {
+    "line": "2026-10-29 06:35:59.055  INFO  req#2 done | openai-chat | output limit | prompt 20,835 | output 64 | cache 20,828 (100.0%, hybrid_snapshot) | TTFT 19.8 ms | total 217 ms | prefill 564.9 tok/s | decode 321.3 tok/s | dflash2 accepted 40/62 (64.5%) | expert cache 100.0% hit, decode 100.0%",
+    "prompt": 20835,
+    "cached": 20828,
+    "from_disk": false,
+    "ttft_s": 0.0198,
+    "decode_tps": 321.3,
+    "session": 0,
+    "phase": "repeat"
+   },
+   {
+    "line": "2026-10-29 06:36:00.923  INFO  req#3 done | openai-chat | output limit | prompt 20,808 | output 64 | cache 0 (0.0%) | TTFT 1.7s | total 1.9s | prefill 12.6k tok/s | decode 311.1 tok/s | dflash2 accepted 39/61 (63.9%) | expert cache 100.0% hit, decode 100.0%",
+    "prompt": 20808,
+    "cached": 0,
+    "from_disk": false,
+    "ttft_s": 1.7,
+    "decode_tps": 311.1,
+    "session": 1,
+    "phase": "cold"
+   },
+   {
+    "line": "2026-10-29 06:36:01.151  INFO  req#4 done | openai-chat | output limit | prompt 20,808 | output 64 | cache 20,801 (100.0%, hybrid_snapshot) | TTFT 20.5 ms | total 226 ms | prefill 555.7 tok/s | decode 307.8 tok/s | dflash2 accepted 39/61 (63.9%) | expert cache 100.0% hit, decode 100.0%",
+    "prompt": 20808,
+    "cached": 20801,
+    "from_disk": false,
+    "ttft_s": 0.0205,
+    "decode_tps": 307.8,
+    "session": 1,
+    "phase": "repeat"
+   },
+   {
+    "line": "2026-10-29 06:36:03.013  INFO  req#5 done | openai-chat | output limit | prompt 20,858 | output 64 | cache 0 (0.0%) | TTFT 1.7s | total 1.9s | prefill 12.6k tok/s | decode 318.8 tok/s | dflash2 accepted 40/61 (65.6%) | expert cache 100.0% hit, decode 100.0%",
+    "prompt": 20858,
+    "cached": 0,
+    "from_disk": false,
+    "ttft_s": 1.7,
+    "decode_tps": 318.8,
+    "session": 2,
+    "phase": "cold"
+   },
+   {
+    "line": "2026-10-29 06:36:03.232  INFO  req#6 done | openai-chat | output limit | prompt 20,858 | output 64 | cache 20,851 (100.0%, hybrid_snapshot) | TTFT 20.1 ms | total 218 ms | prefill 548.8 tok/s | decode 320.1 tok/s | dflash2 accepted 40/61 (65.6%) | expert cache 100.0% hit, decode 100.0%",
+    "prompt": 20858,
+    "cached": 20851,
+    "from_disk": false,
+    "ttft_s": 0.0201,
+    "decode_tps": 320.1,
+    "session": 2,
+    "phase": "repeat"
+   },
+   {
+    "line": "2026-10-29 06:36:17.986  INFO  req#1 done | openai-chat | output limit | prompt 20,835 | output 64 | cache 0 (0.0%) | TTFT 1.8s | total 2.0s | prefill 11.8k tok/s | decode 293.5 tok/s | dflash2 accepted 40/62 (64.5%) | expert cache 100.0% hit, decode 100.0%",
+    "prompt": 20835,
+    "cached": 0,
+    "from_disk": false,
+    "ttft_s": 1.8,
+    "decode_tps": 293.5,
+    "session": 0,
+    "phase": "after restart"
+   },
+   {
+    "line": "2026-10-29 06:36:19.860  INFO  req#2 done | openai-chat | output limit | prompt 20,808 | output 64 | cache 0 (0.0%) | TTFT 1.7s | total 1.9s | prefill 12.5k tok/s | decode 310.8 tok/s | dflash2 accepted 39/61 (63.9%) | expert cache 100.0% hit, decode 100.0%",
+    "prompt": 20808,
+    "cached": 0,
+    "from_disk": false,
+    "ttft_s": 1.7,
+    "decode_tps": 310.8,
+    "session": 1,
+    "phase": "after restart"
+   },
+   {
+    "line": "2026-10-29 06:36:21.727  INFO  req#3 done | openai-chat | output limit | prompt 20,858 | output 64 | cache 0 (0.0%) | TTFT 1.7s | total 1.9s | prefill 12.6k tok/s | decode 312.0 tok/s | dflash2 accepted 40/61 (65.6%) | expert cache 100.0% hit, decode 100.0%",
+    "prompt": 20858,
+    "cached": 0,
+    "from_disk": false,
+    "ttft_s": 1.7,
+    "decode_tps": 312.0,
+    "session": 2,
+    "phase": "after restart"
+   }
+  ],
+  "boot1_ready_s": 11.6,
+  "placement": {
+   "tiers": "24576/0/0",
+   "ram_shadows": 0,
+   "proc_vram_gib": 90.248046875,
+   "expert_vram_gib": 63.3125,
+   "kv_vram_gib": 19.27042007446289,
+   "last_switch": {
+    "message": "",
+    "ok": true
+   },
+   "other_vram_gib": 7.665126800537109
+  },
+  "metrics_boot1": {
+   "capacity_bytes": 0.0,
+   "used_bytes": 0.0,
+   "image_writes_total": 0.0,
+   "block_writes_total": 0.0,
+   "write_bytes_total": 0.0,
+   "fetches_total": 0.0,
+   "read_bytes_total": 0.0,
+   "failures_total": 0.0
+  },
+  "stop_s": 1.0,
+  "startup_boot1": [
+   "2026-10-29 06:35:55.950  INFO  prefix cache | on | 8.00 GiB in RAM"
+  ],
+  "boot2_ready_s": 11.8,
+  "metrics_boot2": {
+   "capacity_bytes": 0.0,
+   "used_bytes": 0.0,
+   "image_writes_total": 0.0,
+   "block_writes_total": 0.0,
+   "write_bytes_total": 0.0,
+   "fetches_total": 0.0,
+   "read_bytes_total": 0.0,
+   "failures_total": 0.0
+  },
+  "startup_boot2": [
+   "2026-10-29 06:36:15.072  INFO  prefix cache | on | 8.00 GiB in RAM"
+  ]
+ },
+ {
+  "config": "ram+disk",
+  "flags": [
+   "--prefix-cache-disk",
+   "/home/jinyang/.cache/super-quant/disk-test/t3-ram-disk"
+  ],
+  "requests": [
+   {
+    "line": "2026-10-29 06:36:36.741  INFO  req#1 done | openai-chat | output limit | prompt 20,790 | output 64 | cache 0 (0.0%) | TTFT 1.8s | total 2.0s | prefill 11.8k tok/s | decode 328.3 tok/s | dflash2 accepted 42/54 (77.8%) | expert cache 100.0% hit, decode 100.0%",
+    "prompt": 20790,
+    "cached": 0,
+    "from_disk": false,
+    "ttft_s": 1.8,
+    "decode_tps": 328.3,
+    "session": 0,
+    "phase": "cold"
+   },
+   {
+    "line": "2026-10-29 06:36:36.952  INFO  req#2 done | openai-chat | output limit | prompt 20,790 | output 64 | cache 20,783 (100.0%, hybrid_snapshot) | TTFT 24.4 ms | total 210 ms | prefill 550.7 tok/s | decode 352.2 tok/s | dflash2 accepted 42/54 (77.8%) | expert cache 100.0% hit, decode 100.0%",
+    "prompt": 20790,
+    "cached": 20783,
+    "from_disk": false,
+    "ttft_s": 0.024399999999999998,
+    "decode_tps": 352.2,
+    "session": 0,
+    "phase": "repeat"
+   },
+   {
+    "line": "2026-10-29 06:36:38.856  INFO  req#3 done | openai-chat | output limit | prompt 20,822 | output 64 | cache 0 (0.0%) | TTFT 1.7s | total 1.9s | prefill 12.4k tok/s | decode 308.7 tok/s | dflash2 accepted 39/63 (61.9%) | expert cache 100.0% hit, decode 100.0%",
+    "prompt": 20822,
+    "cached": 0,
+    "from_disk": false,
+    "ttft_s": 1.7,
+    "decode_tps": 308.7,
+    "session": 1,
+    "phase": "cold"
+   },
+   {
+    "line": "2026-10-29 06:36:39.090  INFO  req#4 done | openai-chat | output limit | prompt 20,822 | output 64 | cache 20,815 (100.0%, hybrid_snapshot) | TTFT 20.3 ms | total 233 ms | prefill 547.6 tok/s | decode 306.2 tok/s | dflash2 accepted 39/63 (61.9%) | expert cache 100.0% hit, decode 100.0%",
+    "prompt": 20822,
+    "cached": 20815,
+    "from_disk": false,
+    "ttft_s": 0.020300000000000002,
+    "decode_tps": 306.2,
+    "session": 1,
+    "phase": "repeat"
+   },
+   {
+    "line": "2026-10-29 06:36:40.965  INFO  req#5 done | openai-chat | output limit | prompt 20,850 | output 64 | cache 0 (0.0%) | TTFT 1.7s | total 1.9s | prefill 12.5k tok/s | decode 334.8 tok/s | dflash2 accepted 41/58 (70.7%) | expert cache 100.0% hit, decode 100.0%",
+    "prompt": 20850,
+    "cached": 0,
+    "from_disk": false,
+    "ttft_s": 1.7,
+    "decode_tps": 334.8,
+    "session": 2,
+    "phase": "cold"
+   },
+   {
+    "line": "2026-10-29 06:36:41.183  INFO  req#6 done | openai-chat | output limit | prompt 20,850 | output 64 | cache 20,843 (100.0%, hybrid_snapshot) | TTFT 20.6 ms | total 216 ms | prefill 528.6 tok/s | decode 333.5 tok/s | dflash2 accepted 41/58 (70.7%) | expert cache 100.0% hit, decode 100.0%",
+    "prompt": 20850,
+    "cached": 20843,
+    "from_disk": false,
+    "ttft_s": 0.0206,
+    "decode_tps": 333.5,
+    "session": 2,
+    "phase": "repeat"
+   },
+   {
+    "line": "2026-10-29 06:36:55.006  INFO  req#1 done | openai-chat | output limit | prompt 20,790 | output 64 | cache 20,783 (100.0%, hybrid_snapshot, from disk) | TTFT 59.9 ms | total 260 ms | queue 32.6 ms | prefill 351.7 tok/s | decode 317.9 tok/s | dflash2 accepted 42/54 (77.8%) | expert cache 100.0% hit, decode 100.0%",
+    "prompt": 20790,
+    "cached": 20783,
+    "from_disk": true,
+    "ttft_s": 0.0599,
+    "decode_tps": 317.9,
+    "session": 0,
+    "phase": "after restart"
+   },
+   {
+    "line": "2026-10-29 06:36:55.268  INFO  req#2 done | openai-chat | output limit | prompt 20,822 | output 64 | cache 20,815 (100.0%, hybrid_snapshot, from disk) | TTFT 53.9 ms | total 260 ms | queue 33.4 ms | prefill 537.1 tok/s | decode 307.2 tok/s | dflash2 accepted 39/63 (61.9%) | expert cache 100.0% hit, decode 100.0%",
+    "prompt": 20822,
+    "cached": 20815,
+    "from_disk": true,
+    "ttft_s": 0.053899999999999997,
+    "decode_tps": 307.2,
+    "session": 1,
+    "phase": "after restart"
+   },
+   {
+    "line": "2026-10-29 06:36:55.513  INFO  req#3 done | openai-chat | output limit | prompt 20,850 | output 64 | cache 20,843 (100.0%, hybrid_snapshot, from disk) | TTFT 54.4 ms | total 244 ms | queue 33.6 ms | prefill 534.1 tok/s | decode 334.6 tok/s | dflash2 accepted 41/58 (70.7%) | expert cache 100.0% hit, decode 100.0%",
+    "prompt": 20850,
+    "cached": 20843,
+    "from_disk": true,
+    "ttft_s": 0.0544,
+    "decode_tps": 334.6,
+    "session": 2,
+    "phase": "after restart"
+   }
+  ],
+  "boot1_ready_s": 12.1,
+  "placement": {
+   "tiers": "24576/0/0",
+   "ram_shadows": 0,
+   "proc_vram_gib": 90.248046875,
+   "expert_vram_gib": 63.3125,
+   "kv_vram_gib": 19.27042007446289,
+   "last_switch": {
+    "message": "",
+    "ok": true
+   },
+   "other_vram_gib": 7.665126800537109
+  },
+  "metrics_boot1": {
+   "capacity_bytes": 68718804992.0,
+   "used_bytes": 1776148480.0,
+   "image_writes_total": 6.0,
+   "block_writes_total": 321.0,
+   "write_bytes_total": 1222631424.0,
+   "fetches_total": 0.0,
+   "read_bytes_total": 0.0,
+   "failures_total": 0.0
+  },
+  "stop_s": 1.4,
+  "startup_boot1": [
+   "2026-10-29 06:36:33.834  INFO  prefix cache Disk tier | 64.0 GiB | cuFile compat | 0 B VRAM staging | started empty: new Disk tier",
+   "2026-10-29 06:36:33.834  INFO  prefix cache | on | 8.00 GiB in RAM, 64.0 GiB on disk (compat)",
+   "2026-10-29 06:36:41.184  INFO  stopping | running and queued requests are cancelled | Press Ctrl+C again to exit without saving the prefix cache",
+   "2026-10-29 06:36:41.184  INFO  engine | spilling the prefix cache to its Disk tier in /home/jinyang/.cache/super-quant/disk-test/t3-ram-disk"
+  ],
+  "boot2_ready_s": 12.2,
+  "metrics_boot2": {
+   "capacity_bytes": 68718804992.0,
+   "used_bytes": 2722865152.0,
+   "image_writes_total": 0.0,
+   "block_writes_total": 2.0,
+   "write_bytes_total": 1687552.0,
+   "fetches_total": 3.0,
+   "read_bytes_total": 1297727488.0,
+   "failures_total": 0.0
+  },
+  "startup_boot2": [
+   "2026-10-29 06:36:53.813  INFO  prefix cache Disk tier | 64.0 GiB | cuFile compat | 0 B VRAM staging | 12 snapshots | 977 blocks | 2.54 GiB used | rebuilt in 308 ms",
+   "2026-10-29 06:36:53.813  INFO  prefix cache | on | 8.00 GiB in RAM, 64.0 GiB on disk (compat)",
+   "2026-10-29 06:36:55.514  INFO  stopping | running and queued requests are cancelled | Press Ctrl+C again to exit without saving the prefix cache",
+   "2026-10-29 06:36:55.514  INFO  engine | spilling the prefix cache to its Disk tier in /home/jinyang/.cache/super-quant/disk-test/t3-ram-disk"
+  ]
+ },
+ {
+  "config": "disk",
+  "flags": [
+   "--prefix-cache-disk",
+   "/home/jinyang/.cache/super-quant/disk-test/t3-disk",
+   "--host-context-mib",
+   "0"
+  ],
+  "requests": [
+   {
+    "line": "2026-10-29 06:37:09.805  INFO  req#1 done | openai-chat | output limit | prompt 20,828 | output 64 | cache 0 (0.0%) | TTFT 1.8s | total 2.1s | prefill 11.3k tok/s | decode 236.2 tok/s | dflash2 accepted 31/56 (55.4%) | expert cache 100.0% hit, decode 100.0%",
+    "prompt": 20828,
+    "cached": 0,
+    "from_disk": false,
+    "ttft_s": 1.8,
+    "decode_tps": 236.2,
+    "session": 0,
+    "phase": "cold"
+   },
+   {
+    "line": "2026-10-29 06:37:10.144  INFO  req#2 done | openai-chat | output limit | prompt 20,828 | output 64 | cache 20,821 (100.0%, hybrid_snapshot, from disk) | TTFT 80.7 ms | total 337 ms | queue 57.4 ms | prefill 567.1 tok/s | decode 250.2 tok/s | dflash2 accepted 31/56 (55.4%) | expert cache 100.0% hit, decode 100.0%",
+    "prompt": 20828,
+    "cached": 20821,
+    "from_disk": true,
+    "ttft_s": 0.08070000000000001,
+    "decode_tps": 250.2,
+    "session": 0,
+    "phase": "repeat"
+   },
+   {
+    "line": "2026-10-29 06:37:12.108  INFO  req#3 done | openai-chat | output limit | prompt 20,799 | output 64 | cache 0 (0.0%) | TTFT 1.8s | total 2.0s | prefill 11.8k tok/s | decode 343.5 tok/s | dflash2 accepted 42/62 (67.7%) | expert cache 100.0% hit, decode 100.0%",
+    "prompt": 20799,
+    "cached": 0,
+    "from_disk": false,
+    "ttft_s": 1.8,
+    "decode_tps": 343.5,
+    "session": 1,
+    "phase": "cold"
+   },
+   {
+    "line": "2026-10-29 06:37:12.357  INFO  req#4 done | openai-chat | output limit | prompt 20,799 | output 64 | cache 20,799 (100.0%, hybrid_snapshot, from disk) | TTFT 56.7 ms | total 247 ms | queue 49.4 ms | prefill 0.0 tok/s | decode 338.8 tok/s | dflash2 accepted 42/62 (67.7%) | expert cache 100.0% hit, decode 100.0%",
+    "prompt": 20799,
+    "cached": 20799,
+    "from_disk": true,
+    "ttft_s": 0.0567,
+    "decode_tps": 338.8,
+    "session": 1,
+    "phase": "repeat"
+   },
+   {
+    "line": "2026-10-29 06:37:14.420  INFO  req#5 done | openai-chat | output limit | prompt 20,846 | output 64 | cache 0 (0.0%) | TTFT 1.8s | total 2.1s | prefill 11.8k tok/s | decode 224.9 tok/s | dflash2 accepted 27/65 (41.5%) | expert cache 100.0% hit, decode 100.0%",
+    "prompt": 20846,
+    "cached": 0,
+    "from_disk": false,
+    "ttft_s": 1.8,
+    "decode_tps": 224.9,
+    "session": 2,
+    "phase": "cold"
+   },
+   {
+    "line": "2026-10-29 06:37:14.783  INFO  req#6 done | openai-chat | output limit | prompt 20,846 | output 64 | cache 20,839 (100.0%, hybrid_snapshot, from disk) | TTFT 73.8 ms | total 362 ms | queue 51.8 ms | prefill 568.7 tok/s | decode 223.0 tok/s | dflash2 accepted 27/65 (41.5%) | expert cache 100.0% hit, decode 100.0%",
+    "prompt": 20846,
+    "cached": 20839,
+    "from_disk": true,
+    "ttft_s": 0.07379999999999999,
+    "decode_tps": 223.0,
+    "session": 2,
+    "phase": "repeat"
+   },
+   {
+    "line": "2026-10-29 06:37:26.847  INFO  req#1 done | openai-chat | output limit | prompt 20,828 | output 64 | cache 20,821 (100.0%, hybrid_snapshot, from disk) | TTFT 78.4 ms | total 346 ms | queue 58.9 ms | prefill 558.7 tok/s | decode 236.8 tok/s | dflash2 accepted 31/56 (55.4%) | expert cache 100.0% hit, decode 100.0%",
+    "prompt": 20828,
+    "cached": 20821,
+    "from_disk": true,
+    "ttft_s": 0.07840000000000001,
+    "decode_tps": 236.8,
+    "session": 0,
+    "phase": "after restart"
+   },
+   {
+    "line": "2026-10-29 06:37:27.109  INFO  req#2 done | openai-chat | output limit | prompt 20,799 | output 64 | cache 20,799 (100.0%, hybrid_snapshot, from disk) | TTFT 74.4 ms | total 261 ms | queue 66.8 ms | prefill 0.0 tok/s | decode 338.6 tok/s | dflash2 accepted 42/62 (67.7%) | expert cache 100.0% hit, decode 100.0%",
+    "prompt": 20799,
+    "cached": 20799,
+    "from_disk": true,
+    "ttft_s": 0.07440000000000001,
+    "decode_tps": 338.6,
+    "session": 1,
+    "phase": "after restart"
+   },
+   {
+    "line": "2026-10-29 06:37:27.467  INFO  req#3 done | openai-chat | output limit | prompt 20,846 | output 64 | cache 20,839 (100.0%, hybrid_snapshot, from disk) | TTFT 71.8 ms | total 356 ms | queue 52.5 ms | prefill 562.0 tok/s | decode 222.8 tok/s | dflash2 accepted 27/65 (41.5%) | expert cache 100.0% hit, decode 100.0%",
+    "prompt": 20846,
+    "cached": 20839,
+    "from_disk": true,
+    "ttft_s": 0.0718,
+    "decode_tps": 222.8,
+    "session": 2,
+    "phase": "after restart"
+   }
+  ],
+  "boot1_ready_s": 11.0,
+  "placement": {
+   "tiers": "24576/0/0",
+   "ram_shadows": 0,
+   "proc_vram_gib": 90.6015625,
+   "expert_vram_gib": 63.3125,
+   "kv_vram_gib": 19.27042007446289,
+   "last_switch": {
+    "message": "",
+    "ok": true
+   },
+   "other_vram_gib": 8.01864242553711
+  },
+  "metrics_boot1": {
+   "capacity_bytes": 68718804992.0,
+   "used_bytes": 2089189376.0,
+   "image_writes_total": 8.0,
+   "block_writes_total": 559.0,
+   "write_bytes_total": 1738178560.0,
+   "fetches_total": 3.0,
+   "read_bytes_total": 475045888.0,
+   "failures_total": 0.0
+  },
+  "stop_s": 0.8,
+  "startup_boot1": [
+   "2026-10-29 06:37:06.760  INFO  prefix cache Disk tier | 64.0 GiB | cuFile compat | 354.1 MiB VRAM staging | started empty: new Disk tier",
+   "2026-10-29 06:37:06.760  INFO  prefix cache | on | RAM off, 64.0 GiB on disk (compat)",
+   "2026-10-29 06:37:14.784  INFO  stopping | running and queued requests are cancelled | Press Ctrl+C again to exit without saving the prefix cache",
+   "2026-10-29 06:37:14.784  INFO  engine | finishing the prefix cache's writes to its Disk tier in /home/jinyang/.cache/super-quant/disk-test/t3-disk"
+  ],
+  "boot2_ready_s": 10.9,
+  "metrics_boot2": {
+   "capacity_bytes": 68718804992.0,
+   "used_bytes": 2248663040.0,
+   "image_writes_total": 1.0,
+   "block_writes_total": 1.0,
+   "write_bytes_total": 159473664.0,
+   "fetches_total": 3.0,
+   "read_bytes_total": 1297727488.0,
+   "failures_total": 0.0
+  },
+  "startup_boot2": [
+   "2026-10-29 06:37:25.575  INFO  prefix cache Disk tier | 64.0 GiB | cuFile compat | 354.1 MiB VRAM staging | 8 snapshots | 976 blocks | 1.95 GiB used | rebuilt in 331 ms",
+   "2026-10-29 06:37:25.575  INFO  prefix cache | on | RAM off, 64.0 GiB on disk (compat)",
+   "2026-10-29 06:37:27.467  INFO  stopping | running and queued requests are cancelled | Press Ctrl+C again to exit without saving the prefix cache",
+   "2026-10-29 06:37:27.467  INFO  engine | finishing the prefix cache's writes to its Disk tier in /home/jinyang/.cache/super-quant/disk-test/t3-disk"
+  ]
+ }
+]

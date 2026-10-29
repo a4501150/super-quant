@@ -32,7 +32,8 @@ ARGS=(
     --tolerant-tool-calls
     --host "$INFERNIX_HOST" --port "$PORT"
 )
-[[ -n "$INFERNIX_PREFIX_CACHE_FILE" ]] && ARGS+=(--prefix-cache-file "$INFERNIX_PREFIX_CACHE_FILE" --prefix-cache-save-mins "$INFERNIX_PREFIX_CACHE_SAVE_MINS")
+[[ -n "$INFERNIX_HOST_CONTEXT_MIB" ]] && ARGS+=(--host-context-mib "$INFERNIX_HOST_CONTEXT_MIB")
+[[ -n "$INFERNIX_PREFIX_CACHE_DISK" ]] && ARGS+=(--prefix-cache-disk "$INFERNIX_PREFIX_CACHE_DISK" --prefix-cache-disk-gib "$INFERNIX_PREFIX_CACHE_DISK_GIB")
 [[ -n "$SERVED_NAME" ]] && ARGS+=(--served-model-name "$SERVED_NAME")
 [[ -n "$INFERNIX_EXPERTS" ]] && ARGS+=(--experts "$INFERNIX_EXPERTS")
 [[ "${INFERNIX_VISION}" == "true" ]] && ARGS+=(--vision)

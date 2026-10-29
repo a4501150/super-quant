@@ -26,7 +26,9 @@ Usage:
 
 Model, n-gram volume and drafter paths default to the INFERNIX_* values in
 configs/model.env; override with --artifact / --ngram-volume / --draft-model.
-Bench boots pass no --prefix-cache-file, so nothing is persisted or restored.
+Bench boots pass no --prefix-cache-disk, so nothing is persisted or restored,
+unless --server-args adds it (extra server flags, e.g. "--prefix-cache-disk DIR
+--host-context-mib 0").
 Prefill prompts carry a unique random prefix so the prefix cache never
 absorbs the prefill being measured.
 
@@ -45,6 +47,7 @@ import json
 import os
 import random
 import re
+import shlex
 import signal
 import subprocess
 import sys
@@ -623,7 +626,7 @@ def server_flags(args, env, experts_spec):
         "--tolerant-tool-calls",
         "--ram-headroom-mib", str(args.ram_headroom_mib),
         "--host", args.host, "--port", str(args.port),
-    ] + (["--experts", experts_spec] if experts_spec else [])
+    ] + (["--experts", experts_spec] if experts_spec else []) + shlex.split(args.server_args)
 
 
 CURRENT = {"server": None}
@@ -662,6 +665,8 @@ def main():
     ap.add_argument("--artifact", default=None)
     ap.add_argument("--ngram-volume", default=None)
     ap.add_argument("--draft-model", default=None)
+    ap.add_argument("--server-args", default="",
+                    help="extra server flags, split like a shell command line")
     args = ap.parse_args()
 
     signal.signal(signal.SIGTERM, cleanup)
