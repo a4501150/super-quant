@@ -5,7 +5,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/../configs/model.env"
 
 PIDFILE="${PROJECT_DIR}/.infernix.pid"
-LOGFILE="${PROJECT_DIR}/.infernix.log"
+# Each start writes a dated log; .infernix.log symlinks to the newest one.
+LOGDIR="${PROJECT_DIR}/logs/infernix"
+LOGFILE="${LOGDIR}/infernix-$(date +%Y%m%d-%H%M%S).log"
+KEEP_DAYS="${INFERNIX_LOG_KEEP_DAYS:-30}"
+mkdir -p "$LOGDIR"
+find "$LOGDIR" -name 'infernix-*.log' -mtime +"$KEEP_DAYS" -delete 2>/dev/null || true
 PORT="${INFERNIX_PORT}"
 SERVED_NAME="${MODEL_ALIAS:-${MODEL_NAME:-}}"
 
@@ -51,6 +56,7 @@ cd "$INFERNIX_MODEL_DIR"
 setsid nohup "$INFERNIX_BIN" "${ARGS[@]}" > "$LOGFILE" 2>&1 < /dev/null &
 SERVER_PID=$!
 echo "$SERVER_PID" > "$PIDFILE"
+ln -sfn "$LOGFILE" "${PROJECT_DIR}/.infernix.log"
 echo "Server PID: $SERVER_PID"
 
 for i in $(seq 1 300); do

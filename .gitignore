@@ -22,3 +22,4 @@ serve.log
 .vllm.pid
 .infernix.pid
 .infernix*.log
+logs/
