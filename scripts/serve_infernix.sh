@@ -41,6 +41,8 @@ ARGS=(
 [[ -n "$INFERNIX_PREFIX_CACHE_DISK" ]] && ARGS+=(--prefix-cache-disk "$INFERNIX_PREFIX_CACHE_DISK" --prefix-cache-disk-gib "$INFERNIX_PREFIX_CACHE_DISK_GIB")
 [[ -n "$SERVED_NAME" ]] && ARGS+=(--served-model-name "$SERVED_NAME")
 [[ -n "$INFERNIX_EXPERTS" ]] && ARGS+=(--experts "$INFERNIX_EXPERTS")
+# Patched chat template: adds the close-thinking-before-calls instruction to the tool reminder.
+[[ -n "$INFERNIX_CHAT_TEMPLATE" ]] && ARGS+=(--chat-template "$INFERNIX_CHAT_TEMPLATE")
 [[ "${INFERNIX_VISION}" == "true" ]] && ARGS+=(--vision)
 # shellcheck disable=SC2206
 [[ -n "$INFERNIX_EXTRA_ARGS" ]] && ARGS+=($INFERNIX_EXTRA_ARGS)
