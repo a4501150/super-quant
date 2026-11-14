@@ -6,7 +6,8 @@ Designed to keep the GPU busy: one server boot per run, placements switched
 at runtime through POST /admin/expert-placement, 0.5 s readiness/move polls
 (no fixed sleeps), a thread pool for the concurrent phase, and every speed
 parsed from the server's own request log ("req#N done | ... | prefill X
-tok/s | decode Y tok/s | dflash2 accepted a/b"), never from client timing.
+tok/s | decode Y tok/s | <drafter> accepted a/b"), never from client timing;
+the drafter name is read from the log line, so any speculative backend parses.
 The script always kills its server on exit (SIGTERM handler + finally).
 
 Usage:
@@ -24,8 +25,9 @@ Usage:
       --placements "vram=100%;vram=50%,ram=50%;vram=50%,ram=0%,ssd=50%;vram=65%,ram=15%,ssd=20%;vram=100%" \
       --out results/infernix_matrix
 
-Model, n-gram volume and drafter paths default to the INFERNIX_* values in
-configs/model.env; override with --artifact / --ngram-volume / --draft-model.
+Model, n-gram volume, drafter mode and drafter paths default to the INFERNIX_*
+values in configs/model.env; override with --artifact / --ngram-volume / --spec
+/ --draft-model.
 Bench boots pass no --prefix-cache-disk, so nothing is persisted or restored,
 unless --server-args adds it (extra server flags, e.g. "--prefix-cache-disk DIR
 --host-context-mib 0").
@@ -86,7 +88,8 @@ def model_env():
     script = (
         "set -e; cd " + SQ + "; source configs/model.env; "
         "for v in INFERNIX_ARTIFACT INFERNIX_NGRAM_VOLUME INFERNIX_DRAFT_MODEL "
-        "INFERNIX_KV_DTYPE INFERNIX_MAX_CONTEXT INFERNIX_MAX_CONCURRENCY; do "
+        "INFERNIX_SPEC INFERNIX_KV_DTYPE INFERNIX_MAX_CONTEXT "
+        "INFERNIX_MAX_CONCURRENCY; do "
         "printf '%s=%s\\n' \"$v\" \"${!v:-}\"; done"
     )
     out = subprocess.run(
@@ -278,13 +281,22 @@ class LogParser:
                     ("output", r"output (\d+)"),
                     ("prefill_tps", r"prefill ([\d.]+[kK]?) tok/s"),
                     ("decode_tps", r"decode ([\d.]+[kK]?) tok/s"),
-                    ("acc_a", r"dflash2 accepted (\d+)/"),
-                    ("acc_b", r"dflash2 accepted \d+/(\d+)"),
                 ]
                 for key, pat in pats:
                     mm = re.search(pat, line)
                     if mm:
                         d[key] = num(mm.group(1))
+                # Speculative acceptance names whichever drafter the server ran
+                # (dflash2, mtp, mixed speculation, ...): that segment reads
+                # "| <name> accepted a/b (p%)". The ngram ("ngram a/b accepted,
+                # r rounds") and draft-archive ("accepted, gen ...") segments
+                # never carry the parenthesised percentage, so they cannot match.
+                acc = re.search(
+                    r"\| ([^|]+?) accepted ([\d.,]+[kK]?)/([\d.,]+[kK]?) \(", line)
+                if acc:
+                    d["drafter"] = acc.group(1).strip()
+                    d["acc_a"] = num(acc.group(2).replace(",", ""))
+                    d["acc_b"] = num(acc.group(3).replace(",", ""))
                 self.reqs[rid] = d
                 continue
             ms = self.STARTED.search(line)
@@ -619,7 +631,7 @@ def server_flags(args, env, experts_spec):
         str(args.max_context or env.get("INFERNIX_MAX_CONTEXT", 262144)),
         "--max-concurrency",
         str(args.max_concurrency or env.get("INFERNIX_MAX_CONCURRENCY", 6)),
-        "--spec", "dflash2",
+        "--spec", args.spec or env.get("INFERNIX_SPEC", "dflash2"),
         "--draft-model",
         args.draft_model or env["INFERNIX_DRAFT_MODEL"],
         "--draft-tokens", "auto", "--lm-head-draft",
@@ -665,6 +677,9 @@ def main():
     ap.add_argument("--artifact", default=None)
     ap.add_argument("--ngram-volume", default=None)
     ap.add_argument("--draft-model", default=None)
+    ap.add_argument("--spec", default=None,
+                    help="speculative drafter for --spec (default: INFERNIX_SPEC"
+                         " from configs/model.env, else dflash2)")
     ap.add_argument("--server-args", default="",
                     help="extra server flags, split like a shell command line")
     args = ap.parse_args()

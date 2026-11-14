@@ -33,7 +33,7 @@ ARGS=(
     --kv-dtype "$INFERNIX_KV_DTYPE"
     --max-context "$INFERNIX_MAX_CONTEXT"
     --max-concurrency "$INFERNIX_MAX_CONCURRENCY"
-    --spec dflash2 --draft-model "$INFERNIX_DRAFT_MODEL" --draft-tokens auto --lm-head-draft
+    --spec "${INFERNIX_SPEC:-dflash2}" --draft-model "$INFERNIX_DRAFT_MODEL" --draft-tokens auto --lm-head-draft
     --tolerant-tool-calls
     --host "$INFERNIX_HOST" --port "$PORT"
 )
