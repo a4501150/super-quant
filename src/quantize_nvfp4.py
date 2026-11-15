@@ -205,10 +205,6 @@ def main():
 
     print("\n=== Done ===")
     print(f"Checkpoint: {args.output_dir}")
-    print(
-        f"Convert to GGUF: convert_hf_to_gguf.py {args.output_dir} "
-        "--fp8-as-q8 --outfile model.gguf"
-    )
 
 
 if __name__ == "__main__":

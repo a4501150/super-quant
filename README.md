@@ -4,16 +4,16 @@
 
 The repository has two main roles:
 
-- Build calibrated GGUF models for llama.cpp.
-- Quantize AWQ/GPTQ/NVFP4 checkpoints and serve every model with Infernix.
+- Build reproducible calibration corpora and AWQ+GPTQ NVFP4 checkpoints with llm-compressor.
+- Serve every model with Infernix (the engine in `~/src/ninferpro`) and benchmark the serving stack.
 
 ## Current configurations
 
 | Configuration | Current use |
 | --- | --- |
 | `Qwen3.8-Flash-Next` | Default production serving with Infernix, NVFP4 |
-| `Qwen3.8-27B-AEON` | GGUF, AWQ-UD, NVFP4, and llama.cpp workflows |
-| `Qwen3.6-27B-AEON` | GGUF workflows and published artifacts |
+| `Qwen3.8-27B-AEON` | 27B model with an NVFP4 quantization recipe |
+| `Qwen3.6-27B-AEON` | 27B model with an NVFP4 quantization recipe |
 
 These are implementations of the same model-config interface, not hardcoded pipeline targets. `configs/model.env` selects `Qwen3.8-Flash-Next` by default, so `make serve-infernix` serves that model. Override the selection for one command with `MODEL_DIR=<name>`.
 
@@ -22,28 +22,17 @@ These are implementations of the same model-config interface, not hardcoded pipe
 - Linux on an SM120 Blackwell GPU.
 - CUDA 13.4 at `/usr/local/cuda-13.4`.
 - Python 3.12 or newer, managed by `uv`.
-- llama.cpp at `~/src/llama.cpp`.
 - The Infernix engine built at `~/src/ninferpro` (see `~/src/ninferpro/README.md` for engine details).
 
 ## Setup
 
-Install the project dependencies and validate the shared CUDA toolkit and llama.cpp build:
+Install the project dependencies and validate the shared CUDA toolkit:
 
 ```bash
 make setup
 ```
 
-`make setup` pins CUDA 13.4 in `~/.bashrc`; it does not build llama.cpp. If the configured build is absent, build it with CUDA 13.4 and SM120 support:
-
-```bash
-cmake -S ~/src/llama.cpp \
-  -B ~/src/llama.cpp/build-cu134 \
-  -G Ninja \
-  -DGGML_CUDA=ON \
-  -DCMAKE_CUDA_ARCHITECTURES=120 \
-  -DCMAKE_BUILD_TYPE=Release
-cmake --build ~/src/llama.cpp/build-cu134 -j"$(nproc)"
-```
+`make setup` pins CUDA 13.4 in `~/.bashrc` and runs `uv sync`. Quantization additionally requires `uv sync --extra quantize`.
 
 ## Production serving
 
@@ -56,50 +45,18 @@ make stop-infernix
 
 Serving behavior — engine binary, artifact, draft model, port, KV dtype, context, concurrency, and expert placement — is defined by the `INFERNIX_*` variables in `configs/<model>/model.env`. See `~/src/ninferpro/README.md` for engine internals. `make infernix-placement`, `make infernix-gaming`, and `make infernix-full` re-place experts between restarts.
 
-For GGUF models, llama.cpp is also available as a foreground server:
+## Calibration corpus
 
-```bash
-MODEL_DIR=Qwen3.8-27B-AEON SPEC_TYPE=none make serve-llama
-```
-
-Omit `SPEC_TYPE=none` only when the active model config defines an installed speculative draft.
-
-## GGUF pipeline
-
-All stages use the active `MODEL_DIR`. Select any model configuration that defines the GGUF and calibration fields required by the stages you run. For example:
+All stages use the active `MODEL_DIR`. Select any model configuration that defines the fields required by the stages you run. For example:
 
 ```bash
 export MODEL_DIR=Qwen3.8-27B-AEON
 ```
 
-A complete fresh baseline run is:
-
-```bash
-make setup
-make download
-make convert
-make calibrate
-make imatrix
-make sensitivity
-make quantize
-make bench-llamacpp
-make compare
-```
-
-The stages produce:
-
-1. A source-precision GGUF with MTP tensors.
-2. Model-scoped multi-domain JSONL calibration records and deterministic text renders.
-3. A disjoint structured holdout for sensitivity and perplexity checks.
-4. Per-domain importance matrices and a weighted merged matrix.
-5. Sensitivity-driven, model-specific tensor overrides.
-6. UD-prefixed GGUF quants that use both the importance matrix and overrides.
-7. Throughput, perplexity, and output-distribution comparison results.
-
 JSONL is the canonical calibration format. It retains complete conversations, message roles, tool definitions, source revisions, and stable record IDs. Calibration has two stages:
 
 1. `calibration/corpus-v1/` is a shared tokenizer-neutral parent corpus. Its four domain JSONL files preserve complete conversations and unsplit documents from the pinned source revisions. Its manifest contains source and extraction policy, counts, and artifact hashes, but no model, tokenizer, token count, or rendered text.
-2. `calibration/<MODEL_DIR>/` is a model-scoped build selected from that parent with the target tokenizer. Its `.txt` files are deterministic renders for llama.cpp tools, and its manifest records the parent digest, tokenizer revision, token budgets, deduplication, and artifact hashes.
+2. `calibration/<MODEL_DIR>/` is a model-scoped build selected from that parent with the target tokenizer. Its `.txt` files are deterministic text renders, and its manifest records the parent digest, tokenizer revision, token budgets, deduplication, and artifact hashes.
 
 Build the parent once, then derive any configured model build from it:
 
@@ -110,7 +67,7 @@ MODEL_DIR=<model> make calibrate
 
 `make recalibrate` only rebuilds the model-scoped selection. `make recalibrate-corpus` explicitly reloads the pinned source datasets and replaces the shared parent. Package a validated parent reproducibly with `make package-calibration-corpus`; override `CORPUS_ARCHIVE` to select another output path. Interrupted parent extraction uses `calibration/.corpus-source-cache/`, while a valid parent lets all model builds run without the original Hugging Face datasets.
 
-Each model must generate or download its own model-scoped calibration build. Do not copy a completed calibration directory, text render, holdout, importance matrix, or manifest to another model. The shared parent corpus is the reusable source; model-specific selection, rendering, and quantization artifacts are not reusable.
+Each model must generate or download its own model-scoped calibration build. Do not copy a completed calibration directory, text render, holdout, or manifest to another model. The shared parent corpus is the reusable source; model-specific selection and rendering artifacts are not reusable.
 
 A verified Qwen3.8-Flash-Next calibration build is available as a release asset. Extract it from the repository root before running quantization on another host:
 
@@ -130,21 +87,7 @@ tar -xzf calibration-corpus-v1.tar.gz -C calibration
 
 Its SHA-256 is `c905a8725d19bdfcd1c57e9f89ffcb129b642a82adde77334b862ad791a93991`.
 
-`make all` runs the normal pipeline with the existing tensor override file. It does not regenerate sensitivity data. Run `make sensitivity` when the model or override policy changes.
-
-### AWQ-UD pipeline
-
-AWQ channel pre-scaling uses separate checkpoints, matrices, sensitivity results, overrides, and GGUF names. A compatible model provides `configs/<model>/quantize.json`, which selects its source-precision checkpoint, calibration policy, module targets, and exclusions. Run it on a host with enough GPU and system memory:
-
-```bash
-uv sync --extra quantize
-MODEL_DIR=<model> make calibrate
-MODEL_DIR=<model> make awq-all
-```
-
-Do not use an already quantized checkpoint as the source, and do not mix AWQ artifacts with baseline weights. AWQ changes the channel basis used by later calibration stages. The checked-in AWQ recipes select approximately 128K effective tokens across weighted domains and pack only complete conversations; overlength conversations are reported and skipped rather than truncated.
-
-### Native NVFP4 pipeline
+## Native NVFP4 quantization
 
 Create an AWQ plus GPTQ NVFP4 checkpoint for any model with a quantization recipe on a sufficiently large host:
 
@@ -154,25 +97,19 @@ MODEL_DIR=<model> make calibrate
 MODEL_DIR=<model> make quantize-nvfp4
 ```
 
-The checked-in native recipes use approximately 1M effective weight-calibration tokens for the dense 27B models and 2M for Flash-Next. Static FP8 KV-cache scales use a separate 262K-token pass with explicit position offsets through the 262,144-token context range. Flash-Next also runs a real router preflight, writes `expert_coverage.json`, and fails if any routed expert does not meet its coverage policy. Convert the checkpoint to GGUF only when llama.cpp compatibility is required:
+The recipe lives in `configs/<model>/quantize.json` and selects the source-precision checkpoint, calibration policy, AWQ channel-scaling targets, NVFP4 groups, and exclusions. The checked-in native recipes use approximately 1M effective weight-calibration tokens for the dense 27B models and 2M for Flash-Next. Static FP8 KV-cache scales use a separate 262K-token pass with explicit position offsets through the 262,144-token context range. Flash-Next also runs a real router preflight, writes `expert_coverage.json`, and fails if any routed expert does not meet its coverage policy.
 
-```bash
-MODEL_DIR=<model> make convert-nvfp4
-```
+Do not use an already quantized checkpoint as the source. The local workstation cannot quantize the 176B Qwen3.8-Flash-Next checkpoint with AWQ or GPTQ because the job exceeds its practical VRAM and system-memory capacity. This is a host limit, not a pipeline or model-config restriction; larger machines can run the same target with an appropriate configuration.
 
-The local workstation cannot quantize the 176B Qwen3.8-Flash-Next checkpoint with AWQ or GPTQ because the job exceeds its practical VRAM and system-memory capacity. This is a host limit, not a pipeline or model-config restriction; larger machines can run the same targets with an appropriate configuration.
-
-Native compressed-tensor serving and converted GGUF serving are different inference paths and should be benchmarked separately.
+Checkpoints are written to `~/models/nvfp4/<MODEL_NAME>-NVFP4`.
 
 ## Benchmarks and tests
 
 ```bash
-make bench-llamacpp  # GGUF quality and llama.cpp throughput
-make compare         # result summary
-make test            # unit tests
+make test  # unit tests
 ```
 
-Benchmark JSON files are stored in `results/`.
+Benchmark JSON and Markdown files are stored in `results/`.
 
 ### Infernix benches
 
@@ -190,13 +127,11 @@ python3 scripts/bench_infernix_frontier.py --binary ... --port 8411 \
 
 The script holds the shared gpu lock for the whole life of its server (from before the boot until it has killed it by PID and the process has exited), so other agents' GPU runs cannot collide with the live model; keep runs short. It always kills its server by PID on exit. Unit tests: `python3 -m unittest tests.test_bench_infernix_frontier`.
 
-
 ## Model configuration
 
 Every Make target resolves the active model through `configs/model.env` and then loads `configs/<model>/model.env`. A model file defines only the features that model uses:
 
 - Common identity: `MODEL_ID`, `MODEL_NAME`, and `NATIVE_CTX`.
-- GGUF stages: `GGUF_ARCH_KEY`, `QUANT_TYPES`, calibration domains, and imatrix settings.
 - Native quantization: checkpoint and output paths used by AWQ, GPTQ, or NVFP4. Structured recipe policy lives in the optional `configs/<model>/quantize.json` file.
 - Serving: model checkpoint, alias, context, cache, and optional speculative-decoding settings.
 
@@ -206,7 +141,6 @@ Machine paths and shared build settings live in `configs/model.env`.
 
 Generated calibration data is stored in `calibration/<MODEL_DIR>/` and ignored by Git. Generated models are outside the repository:
 
-- GGUF: `~/models/gguf`
 - NVFP4: `~/models/nvfp4`
 - Hugging Face downloads: `~/.cache/huggingface/hub`
 

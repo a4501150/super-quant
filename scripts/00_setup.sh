@@ -5,8 +5,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/../configs/model.env"
 
 echo "=== Super-Quant Setup ==="
-echo "llama.cpp dir: ${LLAMACPP_DIR}"
-echo "CUDA arch:     sm_${CUDA_ARCH} (Blackwell)"
 
 # ---------------------------------------------------------------
 # 1. Verify and pin the shared CUDA toolkit.
@@ -62,42 +60,9 @@ uv sync --project "${PROJECT_DIR}"
 
 echo "Python $(uv run --project "${PROJECT_DIR}" python3 --version) | uv $(uv --version)"
 
-# ---------------------------------------------------------------
-# 3. Verify llama.cpp is built
-# ---------------------------------------------------------------
-echo ""
-echo "--- Checking llama.cpp ---"
-
-MISSING=0
-for bin in llama-quantize llama-imatrix llama-server llama-cli llama-perplexity; do
-    if [[ -x "${LLAMACPP_BUILD}/bin/${bin}" ]]; then
-        echo "  OK: ${bin}"
-    else
-        echo "  MISSING: ${bin}"
-        MISSING=1
-    fi
-done
-
-if [[ ${MISSING} -eq 1 ]]; then
-    echo ""
-    echo "ERROR: llama.cpp is not built. Build it first:"
-    echo ""
-    echo "  cd ${LLAMACPP_DIR}"
-    echo "  cmake -S . -B ${LLAMACPP_BUILD} -G Ninja -DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCH} -DCMAKE_BUILD_TYPE=Release"
-    echo "  cmake --build ${LLAMACPP_BUILD} -j\$(nproc)"
-    echo ""
-    exit 1
-fi
-
-if [[ ! -f "${CONVERT_SCRIPT}" ]]; then
-    echo "ERROR: convert_hf_to_gguf.py not found at ${CONVERT_SCRIPT}"
-    exit 1
-fi
-
 echo ""
 echo "=== Setup complete ==="
 echo "CUDA toolkit:  ${CUDA_HOME}"
 echo "Python:        uv managed"
-echo "llama.cpp:     ${LLAMACPP_BUILD}/"
 echo ""
-echo "Next: build llama.cpp if not done, then make download"
+echo "Next: make download"

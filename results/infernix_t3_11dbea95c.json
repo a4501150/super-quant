@@ -1,0 +1,724 @@
+{
+ "mode": "matrix",
+ "rows": [
+  {
+   "placement": "vram=100%",
+   "vram_before": 92304.0,
+   "rss_before": 13138.359375,
+   "post_status": 200,
+   "post_body": {
+    "vram": "100%"
+   },
+   "switch_s": 0.0,
+   "get": {
+    "fill_seeded": 0,
+    "fill_total": 0,
+    "frame_limit": 24576,
+    "frames": 24576,
+    "last_switch": {
+     "message": "applied: 24576 VRAM frames, RAM tier target 0",
+     "ok": true
+    },
+    "mechanism": {
+     "host_available": 171977256960,
+     "host_total": 195482591232,
+     "kv": {
+      "bytes": 20691456000
+     },
+     "landing_slots": 0,
+     "ram": {
+      "experts": 0,
+      "record_bytes": 2764800,
+      "shadows": 0,
+      "slots": 0,
+      "target": 0
+     },
+     "ssd": {
+      "experts": 0
+     },
+     "swaps": {
+      "admitted": 0,
+      "demotion_bytes": 0,
+      "demotions": 0,
+      "hits": 7453,
+      "promotion_bytes": 0,
+      "promotions": 0,
+      "routed": 7453
+     },
+     "total_experts": 24576,
+     "vram": {
+      "bytes": 67981279232,
+      "experts": 24576,
+      "frame_bytes": 2764800,
+      "pinned": 0
+     },
+     "vram_free": 4297457664,
+     "vram_total": 101971001344
+    },
+    "pinned": 0,
+    "resident": true,
+    "residents": 24576,
+    "supported": true,
+    "switching": false,
+    "target": 0,
+    "tier_residents": 0,
+    "tier_slots": 0,
+    "tier_target": 0
+   },
+   "host_expert_path": "mechanism.ram.experts*record_bytes",
+   "host_expert_bytes": 0,
+   "ram_experts": 0,
+   "vram_mib": 92304.0,
+   "rss_mib": 13139.40625,
+   "disturbed": false,
+   "short_c1_tps": 383.8,
+   "ctx30k_c1_tps": 331.3,
+   "ctx30k_prompt_toks": 30.0,
+   "prefill30k_tps": 12900.0,
+   "prefill30k_toks": 30.0,
+   "c6_agg_tps": 521.6,
+   "accept_pct": 67.5,
+   "get_after": {
+    "fill_seeded": 0,
+    "fill_total": 0,
+    "frame_limit": 24576,
+    "frames": 24576,
+    "last_switch": {
+     "message": "applied: 24576 VRAM frames, RAM tier target 0",
+     "ok": true
+    },
+    "mechanism": {
+     "host_available": 171869810688,
+     "host_total": 195482591232,
+     "kv": {
+      "bytes": 20691456000
+     },
+     "landing_slots": 0,
+     "ram": {
+      "experts": 0,
+      "record_bytes": 2764800,
+      "shadows": 0,
+      "slots": 0,
+      "target": 0
+     },
+     "ssd": {
+      "experts": 0
+     },
+     "swaps": {
+      "admitted": 0,
+      "demotion_bytes": 0,
+      "demotions": 0,
+      "hits": 1028098,
+      "promotion_bytes": 0,
+      "promotions": 0,
+      "routed": 1028098
+     },
+     "total_experts": 24576,
+     "vram": {
+      "bytes": 67981279232,
+      "experts": 24576,
+      "frame_bytes": 2764800,
+      "pinned": 0
+     },
+     "vram_free": 4247191552,
+     "vram_total": 101971001344
+    },
+    "pinned": 0,
+    "resident": true,
+    "residents": 24576,
+    "supported": true,
+    "switching": false,
+    "target": 0,
+    "tier_residents": 0,
+    "tier_slots": 0,
+    "tier_target": 0
+   },
+   "tiers": "24576/0/0",
+   "ram_shadows": 0,
+   "proc_vram_gib": 90.1875,
+   "expert_vram_gib": 63.3125,
+   "kv_vram_gib": 19.27042007446289,
+   "last_switch": {
+    "message": "applied: 24576 VRAM frames, RAM tier target 0",
+    "ok": true
+   },
+   "other_vram_gib": 7.604579925537109
+  },
+  {
+   "placement": "vram=65%,ram=15%,ssd=20%",
+   "vram_before": 92352.0,
+   "rss_before": 13300.109375,
+   "post_status": 200,
+   "post_body": {
+    "vram": "65%",
+    "ram": "15%",
+    "ssd": "20%"
+   },
+   "switch_s": 2.2,
+   "get": {
+    "fill_seeded": 0,
+    "fill_total": 0,
+    "frame_limit": 24576,
+    "frames": 15974,
+    "last_switch": {
+     "message": "expert cache 24576 -> 15974 frames, RAM tier 3687 slots",
+     "ok": true
+    },
+    "mechanism": {
+     "host_available": 160330133504,
+     "host_total": 195482591232,
+     "kv": {
+      "bytes": 20691456000
+     },
+     "landing_slots": 0,
+     "ram": {
+      "experts": 3687,
+      "record_bytes": 2764800,
+      "shadows": 0,
+      "slots": 4119,
+      "target": 0
+     },
+     "ssd": {
+      "experts": 4915
+     },
+     "swaps": {
+      "admitted": 0,
+      "demotion_bytes": 0,
+      "demotions": 0,
+      "hits": 1028098,
+      "promotion_bytes": 0,
+      "promotions": 0,
+      "routed": 1028098
+     },
+     "total_experts": 24576,
+     "vram": {
+      "bytes": 44224741376,
+      "experts": 15974,
+      "frame_bytes": 2764800,
+      "pinned": 0
+     },
+     "vram_free": 27986952192,
+     "vram_total": 101971001344
+    },
+    "pinned": 0,
+    "resident": true,
+    "residents": 15974,
+    "supported": true,
+    "switching": false,
+    "target": 0,
+    "tier_residents": 3687,
+    "tier_slots": 4119,
+    "tier_target": 0
+   },
+   "host_expert_path": "mechanism.ram.experts*record_bytes",
+   "host_expert_bytes": 10193817600,
+   "ram_experts": 3687,
+   "vram_mib": 69696.0,
+   "rss_mib": 24166.5078125,
+   "disturbed": true,
+   "short_c1_tps": 234.0,
+   "ctx30k_c1_tps": 222.0,
+   "ctx30k_prompt_toks": 30.0,
+   "prefill30k_tps": 9320.0,
+   "prefill30k_toks": 30.0,
+   "c6_agg_tps": 357.3,
+   "accept_pct": 63.8,
+   "get_after": {
+    "fill_seeded": 0,
+    "fill_total": 0,
+    "frame_limit": 24576,
+    "frames": 15974,
+    "last_switch": {
+     "message": "expert cache 24576 -> 15974 frames, RAM tier 3687 slots",
+     "ok": true
+    },
+    "mechanism": {
+     "host_available": 160368340992,
+     "host_total": 195482591232,
+     "kv": {
+      "bytes": 20691456000
+     },
+     "landing_slots": 0,
+     "ram": {
+      "experts": 3647,
+      "record_bytes": 2764800,
+      "shadows": 40,
+      "slots": 4119,
+      "target": 0
+     },
+     "ssd": {
+      "experts": 4955
+     },
+     "swaps": {
+      "admitted": 7387,
+      "demotion_bytes": 15065395200,
+      "demotions": 5449,
+      "hits": 1981646,
+      "promotion_bytes": 16049664000,
+      "promotions": 5805,
+      "routed": 2023386
+     },
+     "total_experts": 24576,
+     "vram": {
+      "bytes": 44224741376,
+      "experts": 15974,
+      "frame_bytes": 2764800,
+      "pinned": 0
+     },
+     "vram_free": 27968077824,
+     "vram_total": 101971001344
+    },
+    "pinned": 0,
+    "resident": true,
+    "residents": 15974,
+    "supported": true,
+    "switching": false,
+    "target": 0,
+    "tier_residents": 3647,
+    "tier_slots": 4119,
+    "tier_target": 0
+   },
+   "tiers": "15974/3647/4955",
+   "ram_shadows": 40,
+   "proc_vram_gib": 68.080078125,
+   "expert_vram_gib": 41.1875,
+   "kv_vram_gib": 19.27042007446289,
+   "last_switch": {
+    "message": "expert cache 24576 -> 15974 frames, RAM tier 3687 slots",
+    "ok": true
+   },
+   "other_vram_gib": 7.622158050537109
+  },
+  {
+   "placement": "vram=50%,ram=50%",
+   "vram_before": 69714.0,
+   "rss_before": 24248.3671875,
+   "post_status": 200,
+   "post_body": {
+    "vram": "50%",
+    "ram": "50%"
+   },
+   "switch_s": 6.9,
+   "get": {
+    "fill_seeded": 0,
+    "fill_total": 0,
+    "frame_limit": 24576,
+    "frames": 12288,
+    "last_switch": {
+     "message": "expert cache 15974 -> 12288 frames, RAM tier 12288 slots",
+     "ok": true
+    },
+    "mechanism": {
+     "host_available": 136291037184,
+     "host_total": 195482591232,
+     "kv": {
+      "bytes": 20691456000
+     },
+     "landing_slots": 0,
+     "ram": {
+      "experts": 12248,
+      "record_bytes": 2764800,
+      "shadows": 40,
+      "slots": 12720,
+      "target": 0
+     },
+     "ssd": {
+      "experts": 40
+     },
+     "swaps": {
+      "admitted": 0,
+      "demotion_bytes": 15065395200,
+      "demotions": 5449,
+      "hits": 1981646,
+      "promotion_bytes": 16138137600,
+      "promotions": 5837,
+      "routed": 2023386
+     },
+     "total_experts": 24576,
+     "vram": {
+      "bytes": 34024194048,
+      "experts": 12288,
+      "frame_bytes": 2764800,
+      "pinned": 0
+     },
+     "vram_free": 38112002048,
+     "vram_total": 101971001344
+    },
+    "pinned": 0,
+    "resident": true,
+    "residents": 12288,
+    "supported": true,
+    "switching": false,
+    "target": 0,
+    "tier_residents": 12248,
+    "tier_slots": 12720,
+    "tier_target": 0
+   },
+   "host_expert_path": "mechanism.ram.experts*record_bytes",
+   "host_expert_bytes": 33863270400,
+   "ram_experts": 12248,
+   "vram_mib": 59986.0,
+   "rss_mib": 46921.2265625,
+   "disturbed": false,
+   "short_c1_tps": 263.6,
+   "ctx30k_c1_tps": 243.4,
+   "ctx30k_prompt_toks": 30.0,
+   "prefill30k_tps": 7960.0,
+   "prefill30k_toks": 30.0,
+   "c6_agg_tps": 405.5,
+   "accept_pct": 65.2,
+   "get_after": {
+    "fill_seeded": 0,
+    "fill_total": 0,
+    "frame_limit": 24576,
+    "frames": 12288,
+    "last_switch": {
+     "message": "expert cache 15974 -> 12288 frames, RAM tier 12288 slots",
+     "ok": true
+    },
+    "mechanism": {
+     "host_available": 136317652992,
+     "host_total": 195482591232,
+     "kv": {
+      "bytes": 20691456000
+     },
+     "landing_slots": 0,
+     "ram": {
+      "experts": 12288,
+      "record_bytes": 2764800,
+      "shadows": 0,
+      "slots": 12720,
+      "target": 0
+     },
+     "ssd": {
+      "experts": 0
+     },
+     "swaps": {
+      "admitted": 58,
+      "demotion_bytes": 49636454400,
+      "demotions": 17953,
+      "hits": 2897127,
+      "promotion_bytes": 51278745600,
+      "promotions": 18547,
+      "routed": 3037947
+     },
+     "total_experts": 24576,
+     "vram": {
+      "bytes": 34024194048,
+      "experts": 12288,
+      "frame_bytes": 2764800,
+      "pinned": 0
+     },
+     "vram_free": 38109904896,
+     "vram_total": 101971001344
+    },
+    "pinned": 0,
+    "resident": true,
+    "residents": 12288,
+    "supported": true,
+    "switching": false,
+    "target": 0,
+    "tier_residents": 12288,
+    "tier_slots": 12720,
+    "tier_target": 0
+   },
+   "tiers": "12288/12288/0",
+   "ram_shadows": 0,
+   "proc_vram_gib": 58.58203125,
+   "expert_vram_gib": 31.6875,
+   "kv_vram_gib": 19.27042007446289,
+   "last_switch": {
+    "message": "expert cache 15974 -> 12288 frames, RAM tier 12288 slots",
+    "ok": true
+   },
+   "other_vram_gib": 7.624111175537109
+  },
+  {
+   "placement": "vram=50%,ssd=50%",
+   "vram_before": 59988.0,
+   "rss_before": 46928.7890625,
+   "post_status": 200,
+   "post_body": {
+    "vram": "50%",
+    "ssd": "50%"
+   },
+   "switch_s": 1.6,
+   "get": {
+    "fill_seeded": 0,
+    "fill_total": 0,
+    "frame_limit": 24576,
+    "frames": 12288,
+    "last_switch": {
+     "message": "applied: 12288 VRAM frames, RAM tier target 0",
+     "ok": true
+    },
+    "mechanism": {
+     "host_available": 170760097792,
+     "host_total": 195482591232,
+     "kv": {
+      "bytes": 20691456000
+     },
+     "landing_slots": 0,
+     "ram": {
+      "experts": 1,
+      "record_bytes": 2764800,
+      "shadows": 0,
+      "slots": 433,
+      "target": 0
+     },
+     "ssd": {
+      "experts": 12287
+     },
+     "swaps": {
+      "admitted": 0,
+      "demotion_bytes": 49636454400,
+      "demotions": 17953,
+      "hits": 2897127,
+      "promotion_bytes": 51278745600,
+      "promotions": 18547,
+      "routed": 3037947
+     },
+     "total_experts": 24576,
+     "vram": {
+      "bytes": 34024194048,
+      "experts": 12288,
+      "frame_bytes": 2764800,
+      "pinned": 0
+     },
+     "vram_free": 38174916608,
+     "vram_total": 101971001344
+    },
+    "pinned": 0,
+    "resident": true,
+    "residents": 12288,
+    "supported": true,
+    "switching": false,
+    "target": 0,
+    "tier_residents": 1,
+    "tier_slots": 433,
+    "tier_target": 0
+   },
+   "host_expert_path": "mechanism.ram.experts*record_bytes",
+   "host_expert_bytes": 2764800,
+   "ram_experts": 1,
+   "vram_mib": 59988.0,
+   "rss_mib": 14529.01171875,
+   "disturbed": false,
+   "short_c1_tps": 69.8,
+   "ctx30k_c1_tps": 70.3,
+   "ctx30k_prompt_toks": 30.0,
+   "prefill30k_tps": 3940.0,
+   "prefill30k_toks": 30.0,
+   "c6_agg_tps": 182.2,
+   "accept_pct": 65.4,
+   "get_after": {
+    "fill_seeded": 0,
+    "fill_total": 0,
+    "frame_limit": 24576,
+    "frames": 12288,
+    "last_switch": {
+     "message": "applied: 12288 VRAM frames, RAM tier target 0",
+     "ok": true
+    },
+    "mechanism": {
+     "host_available": 170617806848,
+     "host_total": 195482591232,
+     "kv": {
+      "bytes": 20691456000
+     },
+     "landing_slots": 0,
+     "ram": {
+      "experts": 1,
+      "record_bytes": 2764800,
+      "shadows": 0,
+      "slots": 433,
+      "target": 0
+     },
+     "ssd": {
+      "experts": 12287
+     },
+     "swaps": {
+      "admitted": 854,
+      "demotion_bytes": 49636454400,
+      "demotions": 17953,
+      "hits": 3775822,
+      "promotion_bytes": 51588403200,
+      "promotions": 18659,
+      "routed": 4012930
+     },
+     "total_experts": 24576,
+     "vram": {
+      "bytes": 34024194048,
+      "experts": 12288,
+      "frame_bytes": 2764800,
+      "pinned": 0
+     },
+     "vram_free": 38166396928,
+     "vram_total": 101971001344
+    },
+    "pinned": 0,
+    "resident": true,
+    "residents": 12288,
+    "supported": true,
+    "switching": false,
+    "target": 0,
+    "tier_residents": 1,
+    "tier_slots": 433,
+    "tier_target": 0
+   },
+   "tiers": "12288/1/12287",
+   "ram_shadows": 0,
+   "proc_vram_gib": 58.58984375,
+   "expert_vram_gib": 31.6875,
+   "kv_vram_gib": 19.27042007446289,
+   "last_switch": {
+    "message": "applied: 12288 VRAM frames, RAM tier target 0",
+    "ok": true
+   },
+   "other_vram_gib": 7.631923675537109
+  },
+  {
+   "placement": "vram=100%",
+   "vram_before": 59996.0,
+   "rss_before": 14551.65625,
+   "post_status": 200,
+   "post_body": {
+    "vram": "100%"
+   },
+   "switch_s": 4.2,
+   "get": {
+    "fill_seeded": 0,
+    "fill_total": 0,
+    "frame_limit": 24576,
+    "frames": 24576,
+    "last_switch": {
+     "message": "expert cache 12288 -> 24576 frames, RAM tier 1 slots",
+     "ok": true
+    },
+    "mechanism": {
+     "host_available": 171693899776,
+     "host_total": 195482591232,
+     "kv": {
+      "bytes": 20691456000
+     },
+     "landing_slots": 0,
+     "ram": {
+      "experts": 0,
+      "record_bytes": 2764800,
+      "shadows": 0,
+      "slots": 0,
+      "target": 0
+     },
+     "ssd": {
+      "experts": 0
+     },
+     "swaps": {
+      "admitted": 0,
+      "demotion_bytes": 49636454400,
+      "demotions": 17953,
+      "hits": 3775822,
+      "promotion_bytes": 51588403200,
+      "promotions": 18659,
+      "routed": 4012930
+     },
+     "total_experts": 24576,
+     "vram": {
+      "bytes": 67981279232,
+      "experts": 24576,
+      "frame_bytes": 2764800,
+      "pinned": 0
+     },
+     "vram_free": 4209311744,
+     "vram_total": 101971001344
+    },
+    "pinned": 0,
+    "resident": true,
+    "residents": 24576,
+    "supported": true,
+    "switching": false,
+    "target": 0,
+    "tier_residents": 0,
+    "tier_slots": 0,
+    "tier_target": 0
+   },
+   "host_expert_path": "mechanism.ram.experts*record_bytes",
+   "host_expert_bytes": 0,
+   "ram_experts": 0,
+   "vram_mib": 92380.0,
+   "rss_mib": 13407.99609375,
+   "disturbed": false,
+   "short_c1_tps": 380.3,
+   "ctx30k_c1_tps": 319.1,
+   "ctx30k_prompt_toks": 30.0,
+   "prefill30k_tps": 12900.0,
+   "prefill30k_toks": 30.0,
+   "c6_agg_tps": 523.1,
+   "accept_pct": 65.2,
+   "get_after": {
+    "fill_seeded": 0,
+    "fill_total": 0,
+    "frame_limit": 24576,
+    "frames": 24576,
+    "last_switch": {
+     "message": "expert cache 12288 -> 24576 frames, RAM tier 1 slots",
+     "ok": true
+    },
+    "mechanism": {
+     "host_available": 171737989120,
+     "host_total": 195482591232,
+     "kv": {
+      "bytes": 20691456000
+     },
+     "landing_slots": 0,
+     "ram": {
+      "experts": 0,
+      "record_bytes": 2764800,
+      "shadows": 0,
+      "slots": 0,
+      "target": 0
+     },
+     "ssd": {
+      "experts": 0
+     },
+     "swaps": {
+      "admitted": 0,
+      "demotion_bytes": 49636454400,
+      "demotions": 17953,
+      "hits": 4760832,
+      "promotion_bytes": 51588403200,
+      "promotions": 18659,
+      "routed": 4997940
+     },
+     "total_experts": 24576,
+     "vram": {
+      "bytes": 67981279232,
+      "experts": 24576,
+      "frame_bytes": 2764800,
+      "pinned": 0
+     },
+     "vram_free": 4209377280,
+     "vram_total": 101971001344
+    },
+    "pinned": 0,
+    "resident": true,
+    "residents": 24576,
+    "supported": true,
+    "switching": false,
+    "target": 0,
+    "tier_residents": 0,
+    "tier_slots": 0,
+    "tier_target": 0
+   },
+   "tiers": "24576/0/0",
+   "ram_shadows": 0,
+   "proc_vram_gib": 90.21484375,
+   "expert_vram_gib": 63.3125,
+   "kv_vram_gib": 19.27042007446289,
+   "last_switch": {
+    "message": "expert cache 12288 -> 24576 frames, RAM tier 1 slots",
+    "ok": true
+   },
+   "other_vram_gib": 7.631923675537109
+  }
+ ]
+}

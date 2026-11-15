@@ -6,9 +6,6 @@ requires-python = ">=3.12"
 dependencies = [
     "huggingface-hub>=0.25.0",
     "datasets>=3.0.0",
-    "numpy>=1.26.0",
-    "sentencepiece>=0.2.0",
-    "tiktoken>=0.7.0",
     "transformers>=5.16.0",
     "torch==2.15.0.dev20260818+cu134",
     "nvidia-cudnn-cu13==9.25.0.15; sys_platform == 'linux'",
