@@ -7,9 +7,7 @@ dependencies = [
     "huggingface-hub>=0.25.0",
     "datasets>=3.0.0",
     "transformers>=5.16.0",
-    "torch==2.15.0.dev20260818+cu134",
-    "nvidia-cudnn-cu13==9.25.0.15; sys_platform == 'linux'",
-    "triton==3.8.0+gitdf3f91dd; sys_platform == 'linux'",
+    "torch==2.14.1",
     "tqdm>=4.66.0",
     "accelerate>=1.14.0",
 ]
@@ -23,14 +21,10 @@ quantize = [
 ]
 
 
-[tool.uv]
-prerelease = "if-necessary-or-explicit"
-
 [[tool.uv.index]]
-name = "pytorch-cu134"
-url = "https://download.pytorch.org/whl/nightly/cu134"
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
 explicit = true
 
 [tool.uv.sources]
-torch = { index = "pytorch-cu134" }
-triton = { index = "pytorch-cu134" }
+torch = { index = "pytorch-cu130" }
