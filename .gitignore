@@ -16,10 +16,6 @@ __pycache__/
 *.bak
 serve.log
 .freecode/*.lock
-.sglang*.log
-.sglang.pid
-.vllm*.log
-.vllm.pid
 .infernix.pid
 .infernix*.log
 logs/

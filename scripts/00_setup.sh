@@ -3,7 +3,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/../configs/model.env"
-source "${SCRIPT_DIR}/../configs/sglang.env"
 
 echo "=== Super-Quant Setup ==="
 echo "llama.cpp dir: ${LLAMACPP_DIR}"
@@ -12,7 +11,7 @@ echo "CUDA arch:     sm_${CUDA_ARCH} (Blackwell)"
 # ---------------------------------------------------------------
 # 1. Verify and pin the shared CUDA toolkit.
 # ---------------------------------------------------------------
-CUDA_VERSION="${SGLANG_CUDA_VERSION}"
+CUDA_VERSION="${CUDA_VERSION}"
 CUDA_TOOLKIT="/usr/local/cuda-${CUDA_VERSION}"
 
 if [[ ! -x "${CUDA_TOOLKIT}/bin/nvcc" ]]; then

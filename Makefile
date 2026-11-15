@@ -1,4 +1,4 @@
-.PHONY: all setup setup-sglang setup-vllm download convert calibrate-corpus recalibrate-corpus calibrate recalibrate package-calibration-corpus imatrix sensitivity quantize quantize-nvfp4 convert-nvfp4 bench-llamacpp bench-sglang compare compare-md serve serve-llama stop serve-vllm stop-vllm serve-infernix stop-infernix infernix-placement infernix-gaming infernix-full awq-prescale awq-convert awq-imatrix awq-sensitivity awq-quantize awq-all test clean help
+.PHONY: all setup download convert calibrate-corpus recalibrate-corpus calibrate recalibrate package-calibration-corpus imatrix sensitivity quantize quantize-nvfp4 convert-nvfp4 bench-llamacpp compare compare-md serve-llama serve-infernix stop-infernix infernix-placement infernix-gaming infernix-full awq-prescale awq-convert awq-imatrix awq-sensitivity awq-quantize awq-all test clean help
 
 SHELL := /bin/bash
 PROJECT_DIR := $(shell pwd)
@@ -76,29 +76,20 @@ help:
 	@echo "  make convert-nvfp4   Convert a native NVFP4 checkpoint to GGUF"
 	@echo ""
 	@echo "Serving:"
-	@echo "  make serve           Start SGLang with the active model config"
-	@echo "  make serve-vllm      Start vLLM with the active model config"
 	@echo "  make serve-llama     Start llama.cpp with a configured GGUF"
-	@echo "  make stop            Stop SGLang"
 	@echo "  make serve-infernix  Start Infernix (background; survives the shell)"
 	@echo "  make stop-infernix   Stop Infernix"
 	@echo "  make infernix-placement RESERVE_VRAM_GB=32 RESERVE_RAM_GB=24"
 	@echo "  make infernix-gaming  Switch Infernix to the gaming profile (reserves in model.env)"
 	@echo "  make infernix-full    Switch Infernix to every expert in VRAM"
-	@echo "  make stop-vllm       Stop vLLM"
 	@echo "  Examples: make serve-llama SPEC_TYPE=none"
 	@echo "            make serve-llama SPEC_TYPE=mtp QUANT=UD-Q6_K CTX=262144 PARALLEL=3"
 	@echo ""
 	@echo "Benchmarks:"
 	@echo "  make bench-llamacpp  GGUF quality and llama.cpp throughput"
-	@echo "  make bench-sglang    SGLang performance and HiCache correctness"
-	@echo "  Optional: BENCH_PHASES=performance or BENCH_PHASES=correctness"
-	@echo "  Request options: uv run python scripts/bench_sglang_request.py --help"
 	@echo ""
 	@echo "Environment and maintenance:"
 	@echo "  make setup           Validate CUDA/llama.cpp and sync project dependencies"
-	@echo "  make setup-sglang    Rebuild the pinned SGLang environment"
-	@echo "  make setup-vllm      Rebuild the pinned vLLM environment"
 	@echo "  make test            Run unit tests"
 	@echo "  make clean           Remove project artifacts; preserve generated models"
 
@@ -108,12 +99,6 @@ all: setup download convert calibrate imatrix quantize bench-llamacpp compare
 
 setup:
 	@bash $(SCRIPTS)/00_setup.sh
-
-setup-sglang:
-	@bash $(SCRIPTS)/setup_sglang_env.sh
-
-setup-vllm:
-	@bash $(SCRIPTS)/setup_vllm_env.sh
 
 download:
 	@$(UV) bash $(SCRIPTS)/01_download_model.sh
@@ -195,12 +180,6 @@ compare:
 compare-md:
 	@$(UV) python3 $(SRC)/compare_results.py --results-dir $(PROJECT_DIR)/results --model-name $(MODEL_NAME) --markdown
 
-serve:
-	@MODEL_DIR=$(MODEL_DIR) $(UV) bash $(SCRIPTS)/serve_sglang.sh
-
-stop:
-	@bash $(SCRIPTS)/stop_sglang.sh
-
 QUANT     ?= UD-Q6_K
 CTX       ?= $(NATIVE_CTX)
 PORT      ?= 8000
@@ -209,13 +188,6 @@ PARALLEL  ?= 3
 SPEC_TYPE ?=
 serve-llama:
 	@MODEL_DIR=$(MODEL_DIR) SPEC_TYPE=$(SPEC_TYPE) $(UV) bash $(SCRIPTS)/06_serve.sh $(QUANT) $(CTX) $(PORT) $(PARALLEL) $(KV_TYPE_K) $(KV_TYPE_V)
-
-
-serve-vllm:
-	@bash $(SCRIPTS)/serve_vllm.sh
-
-stop-vllm:
-	@bash $(SCRIPTS)/stop_vllm.sh
 
 serve-infernix:
 	@MODEL_DIR=$(MODEL_DIR) bash $(SCRIPTS)/serve_infernix.sh
@@ -231,9 +203,6 @@ infernix-gaming:
 
 infernix-full:
 	@python3 $(SCRIPTS)/infernix_placement.py --shares vram=all
-
-bench-sglang:
-	@MODEL_DIR=$(MODEL_DIR) $(UV) bash $(SCRIPTS)/11_bench_sglang.sh
 
 test:
 	@$(UV) --extra quantize python -m unittest discover -s tests -v

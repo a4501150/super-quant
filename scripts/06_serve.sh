@@ -3,9 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/../configs/model.env"
-source "${SCRIPT_DIR}/../configs/sglang.env"
 
-export CUDA_HOME="/usr/local/cuda-${SGLANG_CUDA_VERSION}"
+export CUDA_HOME="/usr/local/cuda-${CUDA_VERSION}"
 export PATH="${CUDA_HOME}/bin:${PATH}"
 export LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${LD_LIBRARY_PATH:-}"
 
@@ -14,11 +13,11 @@ if [[ ! -x "${LLAMA_SERVER}" || ! -f "${LLAMA_CMAKE_CACHE}" ]]; then
     echo "ERROR: llama.cpp Blackwell build is missing at ${LLAMACPP_BUILD}" >&2
     exit 1
 fi
-CUDA_MAJOR="${SGLANG_CUDA_VERSION%%.*}"
+CUDA_MAJOR="${CUDA_VERSION%%.*}"
 if ! grep -qE "^CMAKE_CUDA_COMPILER:[^=]+=${CUDA_HOME}/bin/nvcc$" "${LLAMA_CMAKE_CACHE}" ||
     ! grep -qE "^CMAKE_CUDA_ARCHITECTURES:[^=]+=${CUDA_ARCH}$" "${LLAMA_CMAKE_CACHE}" ||
     ! ldd "${LLAMA_SERVER}" | grep -q "libcudart.so.${CUDA_MAJOR}"; then
-    echo "ERROR: llama.cpp must be rebuilt for CUDA ${SGLANG_CUDA_VERSION} and sm_${CUDA_ARCH}" >&2
+    echo "ERROR: llama.cpp must be rebuilt for CUDA ${CUDA_VERSION} and sm_${CUDA_ARCH}" >&2
     exit 1
 fi
 

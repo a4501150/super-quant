@@ -5,29 +5,25 @@
 The repository has two main roles:
 
 - Build calibrated GGUF models for llama.cpp.
-- Run NVFP4 checkpoints with SGLang or vLLM.
+- Quantize AWQ/GPTQ/NVFP4 checkpoints and serve every model with Infernix.
 
 ## Current configurations
 
 | Configuration | Current use |
 | --- | --- |
-| `Qwen3.8-Flash-Next` | Default production serving with SGLang, direct PLE checkpoint reads, and HiCache |
-| `Qwen3.8-27B-AEON` | GGUF, AWQ-UD, NVFP4, llama.cpp, and SGLang workflows |
+| `Qwen3.8-Flash-Next` | Default production serving with Infernix, NVFP4 |
+| `Qwen3.8-27B-AEON` | GGUF, AWQ-UD, NVFP4, and llama.cpp workflows |
 | `Qwen3.6-27B-AEON` | GGUF workflows and published artifacts |
 
-These are implementations of the same model-config interface, not hardcoded pipeline targets. `configs/model.env` selects `Qwen3.8-Flash-Next` by default, so `make serve` starts SGLang with that model. Override the selection for one command with `MODEL_DIR=<name>`.
+These are implementations of the same model-config interface, not hardcoded pipeline targets. `configs/model.env` selects `Qwen3.8-Flash-Next` by default, so `make serve-infernix` serves that model. Override the selection for one command with `MODEL_DIR=<name>`.
 
 ## Requirements
 
-- Linux or WSL2 on an SM120 Blackwell GPU.
+- Linux on an SM120 Blackwell GPU.
 - CUDA 13.4 at `/usr/local/cuda-13.4`.
 - Python 3.12 or newer, managed by `uv`.
-- At least 64 GB of system memory for SGLang or vLLM startup. Configure swap on memory-constrained WSL2 systems because FlashInfer JIT compilation can exhaust RAM.
 - llama.cpp at `~/src/llama.cpp`.
-- SGLang source at `~/src/sglang` for SGLang serving.
-- vLLM source at `~/src/vllm` for vLLM serving.
-
-The configured SGLang environment also requires locally built CUDA 13.4 native wheels under `~/.cache/super-quant/wheels/cu134-<sglang-revision>`. `make setup-sglang` reports the exact path if the wheels are missing.
+- The Infernix engine built at `~/src/ninferpro` (see `~/src/ninferpro/README.md` for engine details).
 
 ## Setup
 
@@ -49,50 +45,24 @@ cmake -S ~/src/llama.cpp \
 cmake --build ~/src/llama.cpp/build-cu134 -j"$(nproc)"
 ```
 
-Stop any active server, then build or validate the isolated serving environments as needed:
-
-```bash
-make setup-sglang
-make setup-vllm
-```
-
-The launchers also check environment manifests and rebuild stale environments.
-
 ## Production serving
 
-Start the configured SGLang server:
+Production serving is Infernix (the Infernix engine from `~/src/ninferpro`), started in the background from the active model config:
 
 ```bash
-make serve
+make serve-infernix
+make stop-infernix
 ```
 
-The current `Qwen3.8-Flash-Next` configuration uses:
+Serving behavior — engine binary, artifact, draft model, port, KV dtype, context, concurrency, and expert placement — is defined by the `INFERNIX_*` variables in `configs/<model>/model.env`. See `~/src/ninferpro/README.md` for engine internals. `make infernix-placement`, `make infernix-gaming`, and `make infernix-full` re-place experts between restarts.
 
-- FlashInfer attention and GDN prefill, decode, and verify.
-- CUTLASS FP8 matrix multiplication, with the NVFP4 backend selected automatically.
-- FP8 E4M3 KV cache.
-- Breakable CUDA graphs.
-- A 262,144-token context limit and six running requests.
-- Direct, on-demand PLE reads from the selected safetensors checkpoint, without a second 95.4 GiB table copy.
-- An 18 GB HiCache host budget and a file-backed SSD tier capped at 64 GB. Sparse-indexer host buffers are allocated separately from this host budget.
-
-The SSD tier starts eviction at 90% of its cap and keeps 50 GB of disk space free. Its default directory is `~/models/hicache`.
-
-SGLang and vLLM are independent servers with separate process state:
+For GGUF models, llama.cpp is also available as a foreground server:
 
 ```bash
-make stop       # stop SGLang (.sglang.pid)
-make stop-vllm  # stop vLLM (.vllm.pid)
-```
-
-Start the alternative servers with:
-
-```bash
-make serve-vllm
 MODEL_DIR=Qwen3.8-27B-AEON SPEC_TYPE=none make serve-llama
 ```
 
-SGLang logs to `.sglang.log`; vLLM logs to `.vllm.log`. They normally use the same configured port and GPU, so do not start both with the same resources. llama.cpp runs in the foreground and must be stopped separately. Omit `SPEC_TYPE=none` only when the active model config defines an installed speculative draft.
+Omit `SPEC_TYPE=none` only when the active model config defines an installed speculative draft.
 
 ## GGUF pipeline
 
@@ -190,7 +160,7 @@ The checked-in native recipes use approximately 1M effective weight-calibration 
 MODEL_DIR=<model> make convert-nvfp4
 ```
 
-The current WSL workstation cannot quantize the 176B Qwen3.8-Flash-Next checkpoint with AWQ or GPTQ because the job exceeds its practical VRAM and system-memory capacity. This is a host limit, not a pipeline or model-config restriction; larger machines can run the same targets with an appropriate configuration.
+The local workstation cannot quantize the 176B Qwen3.8-Flash-Next checkpoint with AWQ or GPTQ because the job exceeds its practical VRAM and system-memory capacity. This is a host limit, not a pipeline or model-config restriction; larger machines can run the same targets with an appropriate configuration.
 
 Native compressed-tensor serving and converted GGUF serving are different inference paths and should be benchmarked separately.
 
@@ -198,19 +168,11 @@ Native compressed-tensor serving and converted GGUF serving are different infere
 
 ```bash
 make bench-llamacpp  # GGUF quality and llama.cpp throughput
-make bench-sglang    # SGLang performance and HiCache correctness
 make compare         # result summary
 make test            # unit tests
 ```
 
-A normal `bench-sglang` run executes both public modes. Use `BENCH_PHASES=performance` or `BENCH_PHASES=correctness` to limit it. The individual `single`, `conc`, and `prefill` phases remain available for focused diagnosis. Run `uv run python scripts/bench_sglang_request.py --help` for request-harness options.
-
-Benchmark JSON files are stored in `results/`. The CUDA 13.4 production qualification is recorded in:
-
-- `results/sglang_benchmark_20260911_114909.json`
-- `results/sglang_benchmark_20260911_115654.json`
-
-The correctness run compared 17,366 restored page digests with no write conflicts, read conflicts, or mismatches.
+Benchmark JSON files are stored in `results/`.
 
 ### Infernix benches
 
@@ -236,18 +198,17 @@ Every Make target resolves the active model through `configs/model.env` and then
 - Common identity: `MODEL_ID`, `MODEL_NAME`, and `NATIVE_CTX`.
 - GGUF stages: `GGUF_ARCH_KEY`, `QUANT_TYPES`, calibration domains, and imatrix settings.
 - Native quantization: checkpoint and output paths used by AWQ, GPTQ, or NVFP4. Structured recipe policy lives in the optional `configs/<model>/quantize.json` file.
-- Serving: model checkpoint, alias, context, backend, cache, and optional speculative-decoding settings.
+- Serving: model checkpoint, alias, context, cache, and optional speculative-decoding settings.
 
 A model does not need variables or a recipe for unsupported stages. If a selected target needs missing model policy, add it to that model's config directory instead of adding model-name conditions to the Makefile or scripts.
 
-Machine paths and shared build settings live in `configs/model.env`. CUDA and serving-environment pins live in `configs/sglang.env` and `configs/vllm.env`.
+Machine paths and shared build settings live in `configs/model.env`.
 
 Generated calibration data is stored in `calibration/<MODEL_DIR>/` and ignored by Git. Generated models are outside the repository:
 
 - GGUF: `~/models/gguf`
 - NVFP4: `~/models/nvfp4`
 - Hugging Face downloads: `~/.cache/huggingface/hub`
-- HiCache SSD data: `~/models/hicache`
 
 Run `make help` for the main target list.
 

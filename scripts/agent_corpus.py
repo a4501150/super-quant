@@ -8,15 +8,14 @@ script runs each seed task as a real tool loop against the served model
 back), which is the deployment shape we care about, at ~the cost of the
 plain-corpus pass. The corpus row's ``text`` is the serialized transcript
 (assistant text plus fed-back tool outputs); downstream scoring treats it
-as opaque reference text exactly like quant_agreement.py's corpus.
+as opaque reference text.
 
 No output caps are sent: max_tokens is omitted so each request may run to
 the server's native context, and the only loop bound is max_turns (a
 runaway guard, not a budget).
 
 Usage: agent_corpus.py --port 8000 --out run_bf16
-Requires the server to run with --enable-auto-tool-choice
---tool-call-parser qwen3_coder.
+Requires a server that accepts OpenAI-style chat tool calls.
 """
 import argparse
 import json

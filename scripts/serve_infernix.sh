@@ -10,7 +10,7 @@ LOGDIR="${PROJECT_DIR}/logs/infernix"
 LOGFILE="${LOGDIR}/infernix-$(date +%Y%m%d-%H%M%S).log"
 KEEP_DAYS="${INFERNIX_LOG_KEEP_DAYS:-30}"
 mkdir -p "$LOGDIR"
-find "$LOGDIR" -name 'infernix-*.log' -mtime +"$KEEP_DAYS" -delete 2>/dev/null || true
+find "$LOGDIR" \( -name 'infernix-*.log' -o -name 'gpucore-*' \) -mtime +"$KEEP_DAYS" -delete 2>/dev/null || true
 PORT="${INFERNIX_PORT}"
 SERVED_NAME="${MODEL_ALIAS:-${MODEL_NAME:-}}"
 
@@ -20,7 +20,7 @@ if [[ -f "$PIDFILE" ]] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
 fi
 rm -f "$PIDFILE"
 if ss -ltn "sport = :${PORT}" | grep -q LISTEN; then
-    echo "ERROR: port ${PORT} is already in use (SGLang? run 'make stop')."
+    echo "ERROR: port ${PORT} is already in use; stop whatever holds it (e.g. 'make stop-infernix') and retry."
     exit 1
 fi
 for f in "$INFERNIX_BIN" "$INFERNIX_ARTIFACT" "$INFERNIX_NGRAM_VOLUME" "$INFERNIX_DRAFT_MODEL"; do
@@ -53,6 +53,11 @@ echo "Artifact: $INFERNIX_ARTIFACT"
 echo "Port:     $PORT"
 echo "Log:      $LOGFILE"
 
+# A GPU exception writes a core dump of the faulting kernel (no device memory: small and quick) for
+# cuda-gdb's `target cudacore`; it costs nothing while serving (t2-bench A/B within noise).
+export CUDA_ENABLE_COREDUMP_ON_EXCEPTION=1
+export CUDA_COREDUMP_FILE="${LOGDIR}/gpucore-$(date +%Y%m%d-%H%M%S)-%p"
+export CUDA_COREDUMP_GENERATION_FLAGS=skip_nonrelocated_elf_images,skip_global_memory,skip_shared_memory,skip_local_memory
 # setsid + nohup: the server survives the shell or harness that started it.
 cd "$INFERNIX_MODEL_DIR"
 setsid nohup "$INFERNIX_BIN" "${ARGS[@]}" > "$LOGFILE" 2>&1 < /dev/null &
