@@ -1,4 +1,4 @@
-.PHONY: setup download calibrate-corpus recalibrate-corpus calibrate recalibrate package-calibration-corpus quantize-nvfp4 serve-infernix stop-infernix infernix-placement infernix-gaming infernix-full test clean help
+.PHONY: setup download calibrate-corpus recalibrate-corpus calibrate recalibrate package-calibration-corpus quantize-nvfp4 serve-infernix stop-infernix monitor stop-monitor infernix-placement infernix-gaming infernix-full test clean help
 
 SHELL := /bin/bash
 PROJECT_DIR := $(shell pwd)
@@ -43,6 +43,8 @@ help:
 	@echo "Serving:"
 	@echo "  make serve-infernix  Start Infernix (background; survives the shell)"
 	@echo "  make stop-infernix   Stop Infernix"
+	@echo "  make monitor         Start the Infernix status page (background; port in model.env)"
+	@echo "  make stop-monitor    Stop the status page"
 	@echo "  make infernix-placement RESERVE_VRAM_GB=32 RESERVE_RAM_GB=24"
 	@echo "  make infernix-gaming  Switch Infernix to the gaming profile (reserves in model.env)"
 	@echo "  make infernix-full    Switch Infernix to every expert in VRAM"
@@ -100,6 +102,12 @@ serve-infernix:
 
 stop-infernix:
 	@MODEL_DIR=$(MODEL_DIR) bash $(SCRIPTS)/stop_infernix.sh
+
+monitor:
+	@MODEL_DIR=$(MODEL_DIR) bash $(SCRIPTS)/monitor_infernix.sh start
+
+stop-monitor:
+	@MODEL_DIR=$(MODEL_DIR) bash $(SCRIPTS)/monitor_infernix.sh stop
 
 infernix-placement:
 	@MODEL_DIR=$(MODEL_DIR) bash -c 'source configs/model.env && python3 $(SCRIPTS)/infernix_placement.py --reserve-vram-gb "$${RESERVE_VRAM_GB:-$$INFERNIX_GAMING_RESERVE_VRAM_GB}" --reserve-ram-gb "$${RESERVE_RAM_GB:-$$INFERNIX_GAMING_RESERVE_RAM_GB}"'

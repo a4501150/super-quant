@@ -17,5 +17,6 @@ __pycache__/
 serve.log
 .freecode/*.lock
 .infernix.pid
+.infernix-monitor.pid
 .infernix*.log
 logs/

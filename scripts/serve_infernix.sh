@@ -41,6 +41,7 @@ ARGS=(
 [[ -n "$INFERNIX_PREFIX_CACHE_DISK" ]] && ARGS+=(--prefix-cache-disk "$INFERNIX_PREFIX_CACHE_DISK" --prefix-cache-disk-gib "$INFERNIX_PREFIX_CACHE_DISK_GIB")
 [[ -n "$SERVED_NAME" ]] && ARGS+=(--served-model-name "$SERVED_NAME")
 [[ -n "$INFERNIX_EXPERTS" ]] && ARGS+=(--experts "$INFERNIX_EXPERTS")
+[[ -n "$INFERNIX_REQUEST_LOG" ]] && ARGS+=(--request-log-jsonl "$INFERNIX_REQUEST_LOG" --request-log-max-mib "$INFERNIX_REQUEST_LOG_MAX_MIB")
 # Patched chat template: adds the close-thinking-before-calls instruction to the tool reminder.
 [[ -n "$INFERNIX_CHAT_TEMPLATE" ]] && ARGS+=(--chat-template "$INFERNIX_CHAT_TEMPLATE")
 [[ "${INFERNIX_VISION}" == "true" ]] && ARGS+=(--vision)
