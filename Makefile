@@ -43,7 +43,7 @@ help:
 	@echo "Serving:"
 	@echo "  make serve-infernix  Start Infernix (background; survives the shell)"
 	@echo "  make stop-infernix   Stop Infernix"
-	@echo "  make monitor         Start the Infernix status page (background; port in model.env)"
+	@echo "  make monitor         Start the Infernix status page: placement, Start/Stop (background; port in model.env)"
 	@echo "  make stop-monitor    Stop the status page"
 	@echo "  make infernix-placement RESERVE_VRAM_GB=32 RESERVE_RAM_GB=24"
 	@echo "  make infernix-gaming  Switch Infernix to the gaming profile (reserves in model.env)"

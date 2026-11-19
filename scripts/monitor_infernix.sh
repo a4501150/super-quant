@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Start or stop infernix-monitor, ninferpro's status page for the running server. It only reads
-# the server (its /metrics, /admin/expert-placement, request log and console log), so it can run
-# before, during and after a server restart.
+# Start or stop infernix-monitor, ninferpro's status page for the server. It reads the server (its
+# /metrics, /admin/expert-placement, request log and console log), switches its expert placement,
+# and starts and stops it through infernix_control.sh; it can run before, during and after a
+# server restart.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -21,6 +22,7 @@ start)
     [[ -x "$INFERNIX_MONITOR_BIN" ]] || { echo "ERROR: missing $INFERNIX_MONITOR_BIN (build ninferpro's infernix-monitor target)"; exit 1; }
     mkdir -p "$(dirname "$LOGFILE")"
     ARGS=(--engine "http://127.0.0.1:${INFERNIX_PORT}" --log-file "${PROJECT_DIR}/.infernix.log"
+          --control "${SCRIPT_DIR}/infernix_control.sh"
           --host "$INFERNIX_MONITOR_HOST" --port "$INFERNIX_MONITOR_PORT")
     [[ -n "$INFERNIX_REQUEST_LOG" ]] && ARGS+=(--request-log "$INFERNIX_REQUEST_LOG")
     setsid nohup "$INFERNIX_MONITOR_BIN" "${ARGS[@]}" > "$LOGFILE" 2>&1 < /dev/null &
