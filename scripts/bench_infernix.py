@@ -89,7 +89,8 @@ def model_env():
         "set -e; cd " + SQ + "; source configs/model.env; "
         "for v in INFERNIX_ARTIFACT INFERNIX_NGRAM_VOLUME INFERNIX_DRAFT_MODEL "
         "INFERNIX_SPEC INFERNIX_KV_DTYPE INFERNIX_MAX_CONTEXT "
-        "INFERNIX_MAX_CONCURRENCY; do "
+        "INFERNIX_MAX_CONCURRENCY INFERNIX_DRAFT_TOKENS INFERNIX_LM_HEAD_DRAFT "
+        "INFERNIX_EXTRA_ARGS; do "
         "printf '%s=%s\\n' \"$v\" \"${!v:-}\"; done"
     )
     out = subprocess.run(
@@ -623,9 +624,9 @@ def write_outputs(out, rows, mode):
 
 
 def server_flags(args, env, experts_spec):
+    ngram = args.ngram_volume or env.get("INFERNIX_NGRAM_VOLUME")
     return [
         args.artifact or env["INFERNIX_ARTIFACT"],
-        "--ngram-volume", args.ngram_volume or env["INFERNIX_NGRAM_VOLUME"],
         "--kv-dtype", args.kv_dtype or env.get("INFERNIX_KV_DTYPE", "fp8"),
         "--max-context",
         str(args.max_context or env.get("INFERNIX_MAX_CONTEXT", 262144)),
@@ -634,11 +635,14 @@ def server_flags(args, env, experts_spec):
         "--spec", args.spec or env.get("INFERNIX_SPEC", "dflash2"),
         "--draft-model",
         args.draft_model or env["INFERNIX_DRAFT_MODEL"],
-        "--draft-tokens", "auto", "--lm-head-draft",
+        "--draft-tokens", env.get("INFERNIX_DRAFT_TOKENS") or "auto",
         "--tolerant-tool-calls",
         "--ram-headroom-mib", str(args.ram_headroom_mib),
         "--host", args.host, "--port", str(args.port),
-    ] + (["--experts", experts_spec] if experts_spec else []) + shlex.split(args.server_args)
+    ] + (["--ngram-volume", ngram] if ngram else []) + (
+        ["--lm-head-draft"] if (env.get("INFERNIX_LM_HEAD_DRAFT") or "true") == "true" else []
+    ) + (["--experts", experts_spec] if experts_spec else []) + shlex.split(
+        env.get("INFERNIX_EXTRA_ARGS", "")) + shlex.split(args.server_args)
 
 
 CURRENT = {"server": None}
