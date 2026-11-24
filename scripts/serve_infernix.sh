@@ -23,7 +23,7 @@ if ss -ltn "sport = :${PORT}" | grep -q LISTEN; then
     echo "ERROR: port ${PORT} is already in use; stop whatever holds it (e.g. 'make stop-infernix') and retry."
     exit 1
 fi
-for f in "$INFERNIX_BIN" "$INFERNIX_ARTIFACT" ${INFERNIX_NGRAM_VOLUME:+"$INFERNIX_NGRAM_VOLUME"} "$INFERNIX_DRAFT_MODEL"; do
+for f in "$INFERNIX_BIN" "$INFERNIX_ARTIFACT" ${INFERNIX_NGRAM_VOLUME:+"$INFERNIX_NGRAM_VOLUME"} ${INFERNIX_DRAFT_MODEL:+"$INFERNIX_DRAFT_MODEL"}; do
     [[ -e "$f" ]] || { echo "ERROR: missing $f"; exit 1; }
 done
 
@@ -32,10 +32,13 @@ ARGS=(
     --kv-dtype "$INFERNIX_KV_DTYPE"
     --max-context "$INFERNIX_MAX_CONTEXT"
     --max-concurrency "$INFERNIX_MAX_CONCURRENCY"
-    --spec "${INFERNIX_SPEC:-dflash2}" --draft-model "$INFERNIX_DRAFT_MODEL" --draft-tokens "${INFERNIX_DRAFT_TOKENS:-auto}"
     --tolerant-tool-calls
     --host "$INFERNIX_HOST" --port "$PORT"
 )
+# A speculative backend is opt-in per model: an empty INFERNIX_SPEC serves plain decode.
+if [[ -n "${INFERNIX_SPEC:-}" ]]; then
+    ARGS+=(--spec "$INFERNIX_SPEC" --draft-model "${INFERNIX_DRAFT_MODEL:?INFERNIX_SPEC set but INFERNIX_DRAFT_MODEL empty}" --draft-tokens "${INFERNIX_DRAFT_TOKENS:-auto}")
+fi
 [[ -n "$INFERNIX_NGRAM_VOLUME" ]] && ARGS+=(--ngram-volume "$INFERNIX_NGRAM_VOLUME")
 [[ "${INFERNIX_LM_HEAD_DRAFT:-true}" == "true" ]] && ARGS+=(--lm-head-draft)
 [[ -n "$INFERNIX_HOST_CONTEXT_MIB" ]] && ARGS+=(--host-context-mib "$INFERNIX_HOST_CONTEXT_MIB")
